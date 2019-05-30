@@ -28,6 +28,7 @@
 #define __STDC_FORMAT_MACROS
 #endif
 
+#include "icetray/I3PODHolder.h"
 #include "dataclasses/geometry/I3ModuleGeo.h"
 #include "phys-services/surfaces/ExtrudedPolygon.h"
 #include "clsim/I3CLSimClientModule.h"
@@ -39,8 +40,8 @@
 
 I3_MODULE(I3CLSimClientModule);
 
-I3CLSimClientModule::particleCacheEntry::particleCacheEntry(uint32_t id, const I3CLSimLightSource &lightSource, uint32_t frame, double dt)
-    : particleId(id), frameId(frame), timeShift(dt)
+I3CLSimClientModule::particleCacheEntry::particleCacheEntry(uint32_t id, const I3CLSimLightSource &lightSource, uint32_t frame, double dt, I3CLSimStepFactoryPtr factory)
+    : particleId(id), frameId(frame), timeShift(dt), stepFactory(factory)
 {
     if (lightSource.GetType() == I3CLSimLightSource::Particle) {
         particleMajorID = lightSource.GetParticle().GetMajorID();
@@ -102,6 +103,11 @@ I3CLSimClientModule::I3CLSimClientModule(const I3Context& context)
     AddParameter("OMKeyMaskName",
                  "Name of a I3VectorOMKey or I3VectorModuleKey with masked DOMs. DOMs in this list will not record I3Photons.",
                  omKeyMaskName_);
+
+    rngKeyName_="RNGKey";
+    AddParameter("RNGKeyName",
+              "Name of a uint64_t in the frame containing the per-event RNG key",
+              rngKeyName_);
 
     ignoreMuons_=false;
     AddParameter("IgnoreMuons",
@@ -197,6 +203,7 @@ void I3CLSimClientModule::Configure()
     GetParameter("PhotonSeriesMapName", photonSeriesMapName_);
     GetParameter("MCPESeriesMapName", mcpeSeriesMapName_);
     GetParameter("OMKeyMaskName", omKeyMaskName_);
+    GetParameter("RNGKeyName", rngKeyName_);
     GetParameter("IgnoreMuons", ignoreMuons_);
         
     GetParameter("MCPEGenerator", mcpeGenerator_);
@@ -401,7 +408,7 @@ void AddPhotonsToFrames(const I3CLSimPhotonSeries &photons,
         }
         
         if (frame->hits) {
-            auto hit = mcpeGenerator->Convert(key, outputPhoton);
+            auto hit = mcpeGenerator->Convert(particle->stepFactory->GetRandomStream(), key, outputPhoton);
             if (hit) {
                 if ((*frame->hits)[std::get<0>(*hit)].insert(std::get<1>(*hit)))
                     ++nhits_unique;
@@ -835,9 +842,18 @@ bool I3CLSimClientModule::DigestOtherFrame(I3FramePtr frame)
                 frameCacheEntry.ignoreModules.insert(key);
             }
         }        
+    } else {
+        return false;
+    }
+
+    auto rngKey = frame->Get<boost::shared_ptr<const I3PODHolder<uint64_t>>>(rngKeyName_);
+    if (!rngKey) {
+        log_fatal_stream("Frame contains no RNG key named "<<rngKey);
+        return false;
     }
 
     std::vector<uint32_t> particleIndices;
+    std::vector<I3CLSimStepFactoryPtr> stepFactories;
     {
         boost::unique_lock<boost::mutex> guard(frameCache_mutex_);
         for (std::size_t i=0;i<lightSources.size();++i)
@@ -845,7 +861,8 @@ bool I3CLSimClientModule::DigestOtherFrame(I3FramePtr frame)
             const I3CLSimLightSource &lightSource = lightSources[i];
             const double timeOffset = timeOffsets[i];
             
-            particleCache_.emplace_back(currentParticleCacheIndex_, lightSource, frameCacheEntry.frameId, timeOffset);
+            stepFactories.emplace_back(boost::make_shared<I3CLSimStepFactory>(rngKey->value, i, currentParticleCacheIndex_));
+            particleCache_.emplace_back(currentParticleCacheIndex_, lightSource, frameCacheEntry.frameId, timeOffset, stepFactories.back());
             frameCacheEntry.particles.push_back(currentParticleCacheIndex_);
     
             // make a new index. This will eventually overflow,
@@ -872,7 +889,10 @@ bool I3CLSimClientModule::DigestOtherFrame(I3FramePtr frame)
     // and release the GIL while blocked
     boost::python::detail::allow_threads gatorpit;
     for (std::size_t i=0;i<lightSources.size();++i) {
-        stepGenerator_->EnqueueLightSource(lightSources[i], particleIndices[i]);
+        // the frame key and in-frame source index are deterministic values that
+        // drive the random number sequence; the global source index is used
+        // only to tie photons to source particles
+        stepGenerator_->EnqueueLightSource(lightSources[i], stepFactories[i]);
         log_debug_stream("Enqueued "<<i+1<<" of "<<lightSources.size()<<" light sources");
     }
 

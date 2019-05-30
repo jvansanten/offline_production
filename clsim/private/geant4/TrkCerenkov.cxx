@@ -51,6 +51,7 @@
 
 #include "icetray/I3Units.h"
 #include "clsim/I3CLSimStep.h"
+#include "clsim/I3CLSimStepFactory.h"
 
 #include <boost/thread.hpp>
 
@@ -209,7 +210,7 @@ TrkCerenkov::PostStepDoIt(const G4Track& aTrack, const G4Step& aStep)
 
     // add this step to the step store
     {
-        I3CLSimStep newStep;
+        I3CLSimStep newStep(eventInformation->stepFactory->createStep());
     
         // set all values
         newStep.SetPosX(x0.x()*I3Units::m/m);
@@ -222,7 +223,6 @@ TrkCerenkov::PostStepDoIt(const G4Track& aTrack, const G4Step& aStep)
         newStep.SetNumPhotons(NumPhotons);
         newStep.SetWeight(1.);
         newStep.SetBeta(beta);
-        newStep.SetID(eventInformation->currentExternalParticleID);
         newStep.SetSourceType(0); // cherenkov emission
         
         // emit the step, possibly blocking

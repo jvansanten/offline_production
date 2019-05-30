@@ -46,7 +46,7 @@ public:
     void EndOfEventAction(const G4Event*);
     
     inline bool AbortWasRequested() {return abortRequested_;}
-    inline void SetExternalParticleID(uint32_t val) {currentExternalParticleID_=val;}
+    inline void SetStepFactory(I3CLSimStepFactoryPtr v) { stepFactory_=v; }
     inline void SetSecondaryCallback(const I3CLSimLightSourcePropagator::secondary_callback &callback) {emitSecondary_=callback;}
     inline void SetStepCallback(const I3CLSimLightSourcePropagator::step_callback &callback) {emitStep_=callback;}
     inline void SetMaxRefractiveIndex(double maxRefractiveIndex) {maxRefractiveIndex_=maxRefractiveIndex;}
@@ -55,7 +55,7 @@ private:
     
     I3CLSimLightSourcePropagator::secondary_callback emitSecondary_;
     I3CLSimLightSourcePropagator::step_callback emitStep_;
-    uint32_t currentExternalParticleID_;
+    I3CLSimStepFactoryPtr stepFactory_;
     
     double maxRefractiveIndex_;
 };

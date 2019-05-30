@@ -43,15 +43,15 @@ namespace bp = boost::python;
 
 struct I3CLSimLightSourceToStepConverterWrapper : I3CLSimLightSourceToStepConverter, bp::wrapper<I3CLSimLightSourceToStepConverter>
 {
+    virtual ~I3CLSimLightSourceToStepConverterWrapper() {}
     // pure virtual
     virtual void SetBunchSizeGranularity(uint64_t num) {utils::python_gil_holder gil; this->get_override("SetBunchSizeGranularity")(num);}
     virtual void SetMaxBunchSize(uint64_t num) {utils::python_gil_holder gil; this->get_override("SetMaxBunchSize")(num);}
-    virtual void SetRandomService(I3RandomServicePtr random) {utils::python_gil_holder gil; this->get_override("SetRandomService")(random);}
     virtual void SetWlenBias(I3CLSimFunctionConstPtr wlenBias) {utils::python_gil_holder gil; this->get_override("SetWlenBias")(wlenBias);}
     virtual void SetMediumProperties(I3CLSimMediumPropertiesConstPtr mediumProperties) {utils::python_gil_holder gil; this->get_override("SetMediumProperties")(mediumProperties);}
     virtual void Initialize() {utils::python_gil_holder gil; this->get_override("Initialize")();}
     virtual bool IsInitialized() const {utils::python_gil_holder gil; return this->get_override("IsInitialized")();}
-    virtual void EnqueueLightSource(const I3CLSimLightSource &lightSource, uint32_t identifier) {utils::python_gil_holder gil; this->get_override("EnqueueLightSource")(lightSource, identifier);}
+    virtual void EnqueueLightSource(const I3CLSimLightSource &lightSource, I3CLSimStepFactoryPtr factory) {utils::python_gil_holder gil; this->get_override("EnqueueLightSource")(lightSource, factory);}
     virtual void EnqueueBarrier() {utils::python_gil_holder gil; this->get_override("EnqueueLightSource")();}
     virtual bool BarrierActive() const {utils::python_gil_holder gil; return this->get_override("BarrierActive")();}
     virtual bool MoreStepsAvailable() const {utils::python_gil_holder gil; return this->get_override("MoreStepsAvailable")();}
@@ -162,7 +162,6 @@ void register_I3CLSimLightSourceToStepConverter()
         bp::class_<I3CLSimLightSourceToStepConverter, boost::shared_ptr<I3CLSimLightSourceToStepConverter>, boost::noncopyable>("I3CLSimLightSourceToStepConverter", bp::no_init)
         .def("SetBunchSizeGranularity", bp::pure_virtual(&I3CLSimLightSourceToStepConverter::SetBunchSizeGranularity))
         .def("SetMaxBunchSize", bp::pure_virtual(&I3CLSimLightSourceToStepConverter::SetMaxBunchSize))
-        .def("SetRandomService", bp::pure_virtual(&I3CLSimLightSourceToStepConverter::SetRandomService))
         .def("SetWlenBias", bp::pure_virtual(&I3CLSimLightSourceToStepConverter::SetWlenBias))
         .def("SetMediumProperties", bp::pure_virtual(&I3CLSimLightSourceToStepConverter::SetMediumProperties))
         .def("Initialize", bp::pure_virtual(&I3CLSimLightSourceToStepConverter::Initialize))

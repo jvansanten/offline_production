@@ -48,6 +48,7 @@ namespace bp = boost::python;
 
 struct I3CLSimStepToPhotonConverterWrapper : I3CLSimStepToPhotonConverter, bp::wrapper<I3CLSimStepToPhotonConverter>
 {
+    virtual ~I3CLSimStepToPhotonConverterWrapper() {}
     // pure virtual
     virtual void SetWlenGenerators(const std::vector<I3CLSimRandomValueConstPtr> &wlenGenerators) {utils::python_gil_holder gil; this->get_override("SetWlenGenerators")(wlenGenerators);}
     virtual void SetWlenBias(I3CLSimFunctionConstPtr wlenBias) {utils::python_gil_holder gil; this->get_override("SetWlenBias")(wlenBias);}
@@ -77,8 +78,8 @@ struct I3CLSimStepToPhotonConverterWrapper : I3CLSimStepToPhotonConverter, bp::w
 };
 
 struct I3CLSimStepToPhotonConverterOpenCLWrapper : I3CLSimStepToPhotonConverterOpenCL, bp::wrapper<I3CLSimStepToPhotonConverterOpenCL> {
-    I3CLSimStepToPhotonConverterOpenCLWrapper(I3RandomServicePtr rng, bool nm)
-        : I3CLSimStepToPhotonConverterOpenCL(rng, nm) {}
+    I3CLSimStepToPhotonConverterOpenCLWrapper(bool nm)
+        : I3CLSimStepToPhotonConverterOpenCL(nm) {}
     virtual std::string GetGeometrySource() {
         utils::python_gil_holder gil;
         if (this->get_override("GetGeometrySource"))
@@ -153,10 +154,9 @@ void register_I3CLSimStepToPhotonConverter()
         (
          "I3CLSimStepToPhotonConverterOpenCLBase",
          bp::init<
-         I3RandomServicePtr,bool
+         bool
          >(
            (
-            bp::arg("RandomService"),
             bp::arg("UseNativeMath")=I3CLSimStepToPhotonConverterOpenCLWrapper::default_useNativeMath
            )
           )
@@ -181,10 +181,9 @@ void register_I3CLSimStepToPhotonConverter()
         (
          "I3CLSimStepToPhotonConverterOpenCL",
          bp::init<
-         I3RandomServicePtr,bool
+         bool
          >(
            (
-            bp::arg("RandomService"),
             bp::arg("UseNativeMath")=I3CLSimStepToPhotonConverterOpenCL::default_useNativeMath
            )
           )

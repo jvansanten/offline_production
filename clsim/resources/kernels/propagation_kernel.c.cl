@@ -131,11 +131,19 @@ void scatterDirectionByAngle(floating_t cosa,
 
 inline void createPhotonFromTrack(struct I3CLSimStep *step,
     const floating4_t stepDir,
+#if generateWavelength_TAKES_SINGLE_RANDOM_NUMBER
+    const float4 *photonInitRandom,
+#else
     RNG_ARGS,
+#endif
     floating4_t *photonPosAndTime,
     floating4_t *photonDirAndWlen)
 {
+#if generateWavelength_TAKES_SINGLE_RANDOM_NUMBER
+    floating_t shiftMultiplied = step->dirAndLengthAndBeta.z*((*photonInitRandom).s0);
+#else
     floating_t shiftMultiplied = step->dirAndLengthAndBeta.z*RNG_CALL_UNIFORM_CO;
+#endif
     floating_t inverseParticleSpeed = my_recip(speedOfLight*step->dirAndLengthAndBeta.w);
 
     // move along the step direction
@@ -156,7 +164,11 @@ inline void createPhotonFromTrack(struct I3CLSimStep *step,
         // sourceType==0 is always Cherenkov light with the correct angle w.r.t. the particle/step
         
         // our photon still needs a wavelength. create one!
+#if generateWavelength_TAKES_SINGLE_RANDOM_NUMBER
+        const floating_t wavelength = generateWavelength_0((*photonInitRandom).s1);
+#else
         const floating_t wavelength = generateWavelength_0(RNG_ARGS_TO_CALL);
+#endif
 
         const floating_t cosCherenkov = min(ONE, my_recip(step->dirAndLengthAndBeta.w*getPhaseRefIndex(layer, wavelength))); // cos theta = 1/(beta*n)
         const floating_t sinCherenkov = my_sqrt(ONE-cosCherenkov*cosCherenkov);
@@ -168,13 +180,21 @@ inline void createPhotonFromTrack(struct I3CLSimStep *step,
 
         // and now rotate to cherenkov emission direction
         //printf("gen:\n");
+#if generateWavelength_TAKES_SINGLE_RANDOM_NUMBER
+        scatterDirectionByAngle(cosCherenkov, sinCherenkov, photonDirAndWlen, (*photonInitRandom).s2);
+#else
         scatterDirectionByAngle(cosCherenkov, sinCherenkov, photonDirAndWlen, RNG_CALL_UNIFORM_CO);
+#endif
         //printf("endgen.\n");
 #ifndef NO_FLASHER
     } else {
         // steps >= 1 are flasher emissions, they do not need cherenkov rotation
-        
+
+#if generateWavelength_TAKES_SINGLE_RANDOM_NUMBER
+        const floating_t wavelength = generateWavelength(convert_uint(step->sourceType), photonInitRandom->s1);
+#else
         const floating_t wavelength = generateWavelength(convert_uint(step->sourceType), RNG_ARGS_TO_CALL);
+#endif
         
         // use the step direction as the photon direction
         (*photonDirAndWlen).xyz = stepDir.xyz;
@@ -419,20 +439,18 @@ __kernel void propKernel(
 
     __global struct I3CLSimStep *inputSteps, // deviceBuffer_InputSteps
 #ifndef TABULATE
-    __global struct I3CLSimPhoton *outputPhotons, // deviceBuffer_OutputPhotons
+    __global struct I3CLSimPhoton *outputPhotons // deviceBuffer_OutputPhotons
 
 #ifdef SAVE_PHOTON_HISTORY
-    __global float4 *photonHistory,
+    __global float4 *photonHistory
 #endif
 
 #else // TABULATE
     __global struct I3CLSimReferenceParticle *referenceParticle,
     __global struct I3CLSimTableEntry *outputTableEntries,
-    __global uint *numOutputEntries,
+    __global uint *numOutputEntries
 #endif
-
-    __global ulong* MWC_RNG_x,
-    __global uint* MWC_RNG_a)
+    )
 {
     unsigned int i = get_global_id(0);
 
@@ -459,26 +477,23 @@ __kernel void propKernel(
     float4 currentPhotonHistory[NUM_PHOTONS_IN_HISTORY];
 #endif
 
-    //download MWC RNG state
-    ulong real_rnd_x = MWC_RNG_x[i];
-    uint real_rnd_a = MWC_RNG_a[i];
-    ulong *rnd_x = &real_rnd_x;
-    uint *rnd_a = &real_rnd_a;
-
     // download the step
     struct I3CLSimStep step;
-    step.posAndTime = inputSteps[i].posAndTime;
-    step.dirAndLengthAndBeta = inputSteps[i].dirAndLengthAndBeta;
-    step.numPhotons = inputSteps[i].numPhotons;
-    step.weight = inputSteps[i].weight;
-    step.identifier = inputSteps[i].identifier;
+    // step.posAndTime = inputSteps[i].posAndTime;
+    // step.dirAndLengthAndBeta = inputSteps[i].dirAndLengthAndBeta;
+    // step.numPhotons = inputSteps[i].numPhotons;
+    // step.weight = inputSteps[i].weight;
+    // step.identifier = inputSteps[i].identifier;
 #ifndef NO_FLASHER
     // only needed for flashers
     step.sourceType = inputSteps[i].sourceType;
 #endif
     //step.dummy1 = inputSteps[i].dummy1;  // NOT USED
     //step.dummy2 = inputSteps[i].dummy2;  // NOT USED
-    //step = inputSteps[i]; // Intel OpenCL does not like this
+    step = inputSteps[i]; // Intel OpenCL does not like this
+    
+    clsim_rng_key_t *rnd_key = &step.rngKey;
+    clsim_rng_ctr_t *rnd_counter = &step.rngCounter;
 
 #ifdef TABULATE
     struct I3CLSimReferenceParticle refParticle = *referenceParticle;
@@ -549,9 +564,14 @@ __kernel void propKernel(
             prev_rnd_a = real_rnd_a;
 #endif
             // create a new photon
+            float4 photonInitRandom = rand_co_float4(RNG_ARGS_TO_CALL);
             createPhotonFromTrack(&step,
                 stepDir,
+#if generateWavelength_TAKES_SINGLE_RANDOM_NUMBER
+                &photonInitRandom,
+#else
                 RNG_ARGS_TO_CALL,
+#endif
                 &photonPosAndTime,
                 &photonDirAndWlen);
             
@@ -589,7 +609,7 @@ __kernel void propKernel(
             // (photonics uses a probability of 1e-20, so about 46 absorption lengths)
             abs_lens_initial = PROPAGATE_FOR_FIXED_NUMBER_OF_ABSORPTION_LENGTHS;
 #else
-            abs_lens_initial = -my_log(RNG_CALL_UNIFORM_OC);
+            abs_lens_initial = -my_log(1.f-photonInitRandom.s3);
 #endif
             abs_lens_left = abs_lens_initial;
 #ifdef TABULATE
@@ -602,6 +622,9 @@ __kernel void propKernel(
 
         // this block is along the lines of the PPC kernel
         floating_t distancePropagated;
+        // the per-step block needs 3 random values for the scatter (distance,
+        // 2 angles). draw them all in one go.
+        floating4_t stepRandom = rand_co_float4(RNG_ARGS_TO_CALL);
         {
 #ifdef getTiltZShift_IS_CONSTANT
 #define effective_z (photonPosAndTime.z-getTiltZShift_IS_CONSTANT)
@@ -633,7 +656,7 @@ __kernel void propKernel(
             floating_t mediumBoundary = (photon_dz<ZERO)?(mediumLayerBoundary(currentPhotonLayer)):(mediumLayerBoundary(currentPhotonLayer)+(floating_t)MEDIUM_LAYER_THICKNESS);
 
             // track this thing to the next scattering point
-            floating_t sca_step_left = -my_log(RNG_CALL_UNIFORM_OC);
+            floating_t sca_step_left = -my_log(1.f-stepRandom.s0);
 #ifdef PRINTF_ENABLED
             //dbg_printf("   - next scatter in %f scattering lengths\n", sca_step_left);
 #endif
@@ -864,11 +887,16 @@ __kernel void propKernel(
 #endif
 
             // choose a scattering angle
+#if makeScatteringCosAngle_TAKES_SINGLE_RANDOM_NUMBER
+            // optimized case
+            const floating_t cosScatAngle = makeScatteringCosAngle(stepRandom.s1);
+#else
             const floating_t cosScatAngle = makeScatteringCosAngle(RNG_ARGS_TO_CALL);
+#endif
             const floating_t sinScatAngle = my_sqrt(ONE - sqr(cosScatAngle));
 
             // change the current direction by that angle
-            scatterDirectionByAngle(cosScatAngle, sinScatAngle, &photonDirAndWlen, RNG_CALL_UNIFORM_CO);
+            scatterDirectionByAngle(cosScatAngle, sinScatAngle, &photonDirAndWlen, stepRandom.s2);
 
             // optional direction transformation (for ice anisotropy)
 #ifdef DOUBLE_PRECISION
@@ -913,6 +941,6 @@ __kernel void propKernel(
 #endif
 
     //upload MWC RNG state
-    MWC_RNG_x[i] = real_rnd_x;
-    MWC_RNG_a[i] = real_rnd_a;
+    // MWC_RNG_x[i] = real_rnd_x;
+    // MWC_RNG_a[i] = real_rnd_a;
 }

@@ -29,12 +29,12 @@
 
 TrkUserEventInformation::TrkUserEventInformation(const I3CLSimLightSourcePropagator::secondary_callback &emitSecondary_,
                                                  const I3CLSimLightSourcePropagator::step_callback &emitStep_,
-                                                 uint32_t currentExternalParticleID_,
+                                                 I3CLSimStepFactoryPtr stepFactory_,
                                                  double maxRefractiveIndex_)
 :
 emitSecondary(emitSecondary_),
 emitStep(emitStep_),
-currentExternalParticleID(currentExternalParticleID_),
+stepFactory(stepFactory_),
 maxRefractiveIndex(maxRefractiveIndex_)
 {
 }

@@ -5,9 +5,9 @@
 
 namespace bp = boost::python;
 
-bp::object Convert_Photon(const I3CLSimPhotonToMCPEConverter &self, const ModuleKey &key, const I3CompressedPhoton &photon)
+bp::object Convert_Photon(I3RandomService &rng, const I3CLSimPhotonToMCPEConverter &self, const ModuleKey &key, const I3CompressedPhoton &photon)
 {
-    auto hit = self.Convert(key, photon);
+    auto hit = self.Convert(rng, key, photon);
     if (hit) {
         return bp::make_tuple(std::get<0>(*hit), std::get<1>(*hit));
     } else {
@@ -27,7 +27,7 @@ void register_I3CLSimPhotonToMCPEConverterForDOMs()
     bp::class_<I3CLSimPhotonToMCPEConverterForDOMs, boost::shared_ptr<I3CLSimPhotonToMCPEConverterForDOMs>,
         bp::bases<I3CLSimPhotonToMCPEConverter>, boost::noncopyable>
         ("I3CLSimPhotonToMCPEConverterForDOMs",
-          bp::init<I3RandomServicePtr,boost::shared_ptr<const std::map<OMKey, I3CLSimFunctionConstPtr>>,I3CLSimFunctionConstPtr>(
-                   bp::args("randomService", "wavelengthAcceptance", "angularAcceptance")))
+          bp::init<boost::shared_ptr<const std::map<OMKey, I3CLSimFunctionConstPtr>>,I3CLSimFunctionConstPtr>(
+                   bp::args("wavelengthAcceptance", "angularAcceptance")))
     ;
 }

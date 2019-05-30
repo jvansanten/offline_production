@@ -325,18 +325,16 @@ namespace I3CLSimHelper
 
             I3CLSimRandomValueConstPtr scatAngles = mediumProperties.GetScatteringCosAngleDistribution();
             if (!scatAngles) log_fatal("scattering angle function is (null).");
-            
-            
+
+            bool singleArg = scatAngles->OpenCLFunctionWillOnlyUseASingleRandomNumber();
             code << scatAngles->GetOpenCLFunction("makeScatteringCosAngle", // name
-                                                  
-                                                  // these are all defined as macros by the rng code:
-                                                  "RNG_ARGS",               // function arguments for rng
-                                                  "RNG_ARGS_TO_CALL",       // if we call anothor function, this is how we pass on the rng state
-                                                  "RNG_CALL_UNIFORM_CO",    // the call to the rng for creating a uniform number [0;1[
-                                                  "RNG_CALL_UNIFORM_OC"     // the call to the rng for creating a uniform number ]0;1]
-                                                  );
-            
-            
+                // these are all defined as macros by the rng code:
+                singleArg ? "float randomValue__" : "RNG_ARGS",               // function arguments for rng
+                singleArg ? "" : "RNG_ARGS_TO_CALL",       // if we call anothor function, this is how we pass on the rng state
+                singleArg ? "randomValue__" : "RNG_CALL_UNIFORM_CO",    // the call to the rng for creating a uniform number [0;1[
+                singleArg ? "1.f-randomValue__" : "RNG_CALL_UNIFORM_OC"     // the call to the rng for creating a uniform number ]0;1]
+                );
+            code << "#define makeScatteringCosAngle_TAKES_SINGLE_RANDOM_NUMBER "<<(singleArg ? "1" : "0")<<"\n";
             code << "///////////////// END scattering angle distribution ////////////////\n";
             code << "\n";        
         }
@@ -436,26 +434,35 @@ std::string
 GenerateWavelengthGeneratorSource(const std::vector<I3CLSimRandomValueConstPtr> &wlenGenerators)
 {
     std::string wlenGeneratorSource;
+    bool singleArg = true;
+    for (std::size_t i=0; i<wlenGenerators.size(); ++i) {
+        if (!wlenGenerators[i]->OpenCLFunctionWillOnlyUseASingleRandomNumber()) {
+            singleArg = false;
+            break;
+        }
+    }
     for (std::size_t i=0; i<wlenGenerators.size(); ++i)
     {
         const std::string generatorName = "generateWavelength_" + boost::lexical_cast<std::string>(i);
         const std::string thisGeneratorSource = 
         wlenGenerators[i]->GetOpenCLFunction(generatorName, // name
-                                              // these are all defined as macros by the rng code:
-                                              "RNG_ARGS",               // function arguments for rng
-                                              "RNG_ARGS_TO_CALL",       // if we call anothor function, this is how we pass on the rng state
-                                              "RNG_CALL_UNIFORM_CO",    // the call to the rng for creating a uniform number [0;1[
-                                              "RNG_CALL_UNIFORM_OC"     // the call to the rng for creating a uniform number ]0;1]
-                                              );
+            // these are all defined as macros by the rng code:
+            singleArg ? "float randomValue__" : "RNG_ARGS",               // function arguments for rng
+            singleArg ? "" : "RNG_ARGS_TO_CALL",       // if we call anothor function, this is how we pass on the rng state
+            singleArg ? "randomValue__" : "RNG_CALL_UNIFORM_CO",    // the call to the rng for creating a uniform number [0;1[
+            singleArg ? "1.f-randomValue__" : "RNG_CALL_UNIFORM_OC"     // the call to the rng for creating a uniform number ]0;1]
+            );
         
         wlenGeneratorSource = wlenGeneratorSource + thisGeneratorSource + "\n";
     }
     wlenGeneratorSource = wlenGeneratorSource+ makeGenerateWavelengthMasterFunction(wlenGenerators.size(),
                                                                                       "generateWavelength",
-                                                                                      "RNG_ARGS",               // function arguments for rng
-                                                                                      "RNG_ARGS_TO_CALL"        // if we call anothor function, this is how we pass on the rng state
+                                                                                      singleArg ? "float randomValue__" : "RNG_ARGS",               // function arguments for rng
+                                                                                      singleArg ? "randomValue__" : "RNG_ARGS_TO_CALL"        // if we call anothor function, this is how we pass on the rng state
                                                                                       );
-    wlenGeneratorSource = wlenGeneratorSource + "\n";
+    wlenGeneratorSource += "\n#define generateWavelength_TAKES_SINGLE_RANDOM_NUMBER ";
+    wlenGeneratorSource += (singleArg ? "1" : "0");
+    wlenGeneratorSource += "\n";
     
     return wlenGeneratorSource;
 }

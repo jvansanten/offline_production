@@ -57,8 +57,6 @@
 #include "opencl/I3CLSimHelperGenerateMediumPropertiesSource.h"
 #include "opencl/I3CLSimHelperGenerateGeometrySource.h"
 
-#include "opencl/mwcrng_init.h"
-
 #define __CL_ENABLE_EXCEPTIONS
 #include "clsim/cl.hpp"
 
@@ -67,13 +65,11 @@ using namespace I3CLSimHelper;
 const bool I3CLSimStepToPhotonConverterOpenCL::default_useNativeMath=true;
 
 
-I3CLSimStepToPhotonConverterOpenCL::I3CLSimStepToPhotonConverterOpenCL(I3RandomServicePtr randomService,
-                                                                       bool useNativeMath)
+I3CLSimStepToPhotonConverterOpenCL::I3CLSimStepToPhotonConverterOpenCL(bool useNativeMath)
 :
 openCLStarted_(false),
 queueToOpenCL_(new I3CLSimQueue<ToOpenCLPair_t>(2)),
 queueFromOpenCL_(new I3CLSimQueue<I3CLSimStepToPhotonConverter::ConversionResult_t>(2)),
-randomService_(randomService),
 initialized_(false),
 compiled_(false),
 useNativeMath_(useNativeMath),
@@ -90,14 +86,12 @@ maxWorkgroupSize_(0),
 workgroupSize_(0),
 maxNumWorkitems_(10240)
 {
-    if (!randomService_) log_fatal("You need to supply a I3RandomService.");
-    
     // load program source from files
     const std::string I3_BUILD(getenv("I3_BUILD"));
     const std::string kernelBaseDir = I3_BUILD+"/clsim/resources/kernels";
     
     try {
-        mwcrngKernelSource_ = I3CLSimHelper::LoadProgramSource(kernelBaseDir+"/mwcrng_kernel.cl");
+        rngKernelSource_ = I3CLSimHelper::LoadProgramSource(kernelBaseDir+"/random123_kernel.cl");
     } catch (std::runtime_error &e) {
         throw I3CLSimStepToPhotonConverter_exception((std::string("Could not load kernel: ") + e.what()).c_str());
     }
@@ -123,9 +117,6 @@ I3CLSimStepToPhotonConverterOpenCL::~I3CLSimStepToPhotonConverterOpenCL()
     }
     
     // reset buffers
-    deviceBuffer_MWC_RNG_x.reset();
-    deviceBuffer_MWC_RNG_a.reset();
-    
     deviceBuffer_InputSteps.clear();
     deviceBuffer_OutputPhotons.clear();
     deviceBuffer_CurrentNumOutputPhotons.clear();
@@ -233,7 +224,6 @@ void I3CLSimStepToPhotonConverterOpenCL::Initialize()
     if (device_->IsGPU()) {
       size_t sizePerWorkitem = numBuffers*(
         sizeof(I3CLSimStep)  // the input step
-        + 2*sizeof(uint64_t) // MWC multipliers
         + std::max(10u,
           unsigned(10000.*(saveAllPhotons_ ? saveAllPhotonsPrescale_ : 0)))
           *sizeof(I3CLSimPhoton) // the output buffer
@@ -244,11 +234,6 @@ void I3CLSimStepToPhotonConverterOpenCL::Initialize()
       maxNumWorkitems_ = (device_->GetGlobalMemSize()
         - geoLayerToOMNumIndexPerStringSetInfo_.size()*sizeof(unsigned short)
         - numBuffers*sizeof(uint32_t))/sizePerWorkitem;
-      size_t numMultipliers = 6139850;
-      if (maxNumWorkitems_ > numMultipliers) {
-        log_info_stream("Limiting number of work items to "<<numMultipliers<<" (maximum number of prime multipliers)");
-        maxNumWorkitems_ = numMultipliers;
-      }
       // Choose a bunch size that is a multiple of both the number of cores
       // and the workgroup size
       size_t granularity = device_->GetMaxComputeUnits()*workgroupSize_;
@@ -272,23 +257,10 @@ void I3CLSimStepToPhotonConverterOpenCL::Initialize()
         
         maxNumOutputPhotons_ = static_cast<uint32_t>(std::min(maxNumWorkitems_*sizeIncreaseFactor, static_cast<std::size_t>(std::numeric_limits<uint32_t>::max())));
     }
-    
-    // set up rng
-    log_debug("Setting up RNG for %zu workitems.", maxNumWorkitems_);
-    
-    MWC_RNG_x.resize(maxNumWorkitems_);
-    MWC_RNG_a.resize(maxNumWorkitems_);
-    
-    if (init_MWC_RNG(&(MWC_RNG_x[0]), &(MWC_RNG_a[0]), maxNumWorkitems_, randomService_)!=0) 
-        throw I3CLSimStepToPhotonConverter_exception("I3CLSimStepToPhotonConverterOpenCL already initialized!");
-    
-    log_debug("RNG is set up..");
-    
+
     log_debug("Setting up device buffers..");
     
     // reset all buffers first
-    deviceBuffer_MWC_RNG_x.reset();
-    deviceBuffer_MWC_RNG_a.reset();
     deviceBuffer_InputSteps.clear();
     deviceBuffer_OutputPhotons.clear();
     deviceBuffer_PhotonHistory.clear();
@@ -297,12 +269,6 @@ void I3CLSimStepToPhotonConverterOpenCL::Initialize()
     
     
     // set up device buffers from existing host buffers
-    deviceBuffer_MWC_RNG_x = boost::shared_ptr<cl::Buffer>
-    (new cl::Buffer(*context_, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, MWC_RNG_x.size() * sizeof(uint64_t), &(MWC_RNG_x[0])));
-    
-    deviceBuffer_MWC_RNG_a = boost::shared_ptr<cl::Buffer>
-    (new cl::Buffer(*context_, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, MWC_RNG_a.size() * sizeof(uint32_t), &(MWC_RNG_a[0])));
-    
     if (!saveAllPhotons_) {
         // no need for a geometry buffer if all photons are saved and no
         // geometry is necessary.
@@ -355,9 +321,6 @@ void I3CLSimStepToPhotonConverterOpenCL::Initialize()
         if (photonHistoryEntries_>0) {
             kernel_[i]->setArg(argN++, *(deviceBuffer_PhotonHistory[i]));           // the photon history (the last N points where the photon scattered)
         }
-
-        kernel_[i]->setArg(argN++, *deviceBuffer_MWC_RNG_x);                    // rng state
-        kernel_[i]->setArg(argN++, *deviceBuffer_MWC_RNG_a);                    // rng state
 
     }
     log_debug("Kernel configured.");
@@ -534,7 +497,7 @@ std::string I3CLSimStepToPhotonConverterOpenCL::GetFullSource()
     std::ostringstream code;
     
     code << prependSource_;
-    code << mwcrngKernelSource_;
+    code << rngKernelSource_;
     code << wlenGeneratorSource_;
     code << wlenBiasSource_;
     code << mediumPropertiesSource_;
@@ -623,6 +586,12 @@ void I3CLSimStepToPhotonConverterOpenCL::SetupQueueAndKernel(const cl::Platform 
     //BuildOptions += "-cl-no-signed-zeros ";
     //BuildOptions += "-cl-unsafe-math-optimizations ";
     BuildOptions += "-cl-mad-enable ";
+    
+    {
+        const std::string I3_BUILD(getenv("I3_BUILD"));
+        const std::string kernelBaseDir = I3_BUILD+"/clsim/resources/kernels";
+        BuildOptions += "-I"+kernelBaseDir+"/Random123/include ";
+    }
 
     const bool nvidiaVerboseCompile=false;
     if (nvidiaVerboseCompile)
@@ -654,7 +623,7 @@ void I3CLSimStepToPhotonConverterOpenCL::SetupQueueAndKernel(const cl::Platform 
         // compiler issues (as found on OSX 10.11 for example)
         std::string combined_source;
         combined_source += prependSource_ + "\n";
-        combined_source += mwcrngKernelSource_ + "\n";
+        combined_source += rngKernelSource_ + "\n";
         combined_source += wlenGeneratorSource_ + "\n";
         combined_source += wlenBiasSource_ + "\n";
         combined_source += mediumPropertiesSource_ + "\n";
@@ -1215,8 +1184,6 @@ void I3CLSimStepToPhotonConverterOpenCL::OpenCLThread_impl(boost::this_thread::d
     if (!saveAllPhotons_) {
         if (!deviceBuffer_GeoLayerToOMNumIndexPerStringSet) log_fatal("Internal error: deviceBuffer_GeoLayerToOMNumIndexPerStringSet is (null)");
     }
-    if (!deviceBuffer_MWC_RNG_x) log_fatal("Internal error: deviceBuffer_MWC_RNG_x is (null)");
-    if (!deviceBuffer_MWC_RNG_a) log_fatal("Internal error: deviceBuffer_MWC_RNG_a is (null)");
     
     // notify the main thread that everything is set up
     {

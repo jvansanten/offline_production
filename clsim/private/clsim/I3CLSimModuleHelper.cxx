@@ -301,7 +301,6 @@ namespace I3CLSimModuleHelper {
 
     
     I3CLSimStepToPhotonConverterOpenCLPtr initializeOpenCL(const I3CLSimOpenCLDevice &device,
-                                                           I3RandomServicePtr rng,
                                                            I3CLSimSimpleGeometryConstPtr geometry,
                                                            I3CLSimMediumPropertiesConstPtr medium,
                                                            I3CLSimFunctionConstPtr wavelengthGenerationBias,
@@ -316,7 +315,7 @@ namespace I3CLSimModuleHelper {
                                                            uint32_t photonHistoryEntries,
                                                            uint32_t limitWorkgroupSize)
     {
-        I3CLSimStepToPhotonConverterOpenCLPtr conv(new I3CLSimStepToPhotonConverterOpenCL(rng, device.GetUseNativeMath()));
+        I3CLSimStepToPhotonConverterOpenCLPtr conv(new I3CLSimStepToPhotonConverterOpenCL(device.GetUseNativeMath()));
 
         conv->SetDevice(device);
 

@@ -58,7 +58,7 @@ void TrkEventAction::BeginOfEventAction(const G4Event* anEvent)
     TrkUserEventInformation* eventInformation = 
     new TrkUserEventInformation(emitSecondary_,
                                 emitStep_,
-                                currentExternalParticleID_,
+                                stepFactory_,
                                 maxRefractiveIndex_);
 
     G4EventManager::GetEventManager()->SetUserInformation(eventInformation);

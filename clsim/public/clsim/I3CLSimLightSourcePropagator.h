@@ -7,6 +7,7 @@
 
 struct I3CLSimStep;
 I3_FORWARD_DECLARATION(I3CLSimLightSource);
+I3_FORWARD_DECLARATION(I3CLSimStepFactory);
 I3_FORWARD_DECLARATION(I3CLSimMediumProperties);
 I3_FORWARD_DECLARATION(I3CLSimFunction);
 I3_FORWARD_DECLARATION(I3RandomService);
@@ -18,13 +19,13 @@ public:
     /// callback returns true, the light source was accepted by another
     /// propagator, and this propagator should stop processing it. Otherwise,
     /// this propagator needs to break the secondary down into steps itself.
-    typedef std::function<bool(I3CLSimLightSourceConstPtr &, uint32_t)> secondary_callback;
+    typedef std::function<bool(I3CLSimLightSourceConstPtr &, I3CLSimStepFactoryPtr)> secondary_callback;
     
     /// Function to call when a step is produced
     typedef std::function<void(const I3CLSimStep&)> step_callback;
     
     virtual bool IsValidForLightSource(const I3CLSimLightSource &) = 0;
-    virtual I3MCTreePtr Convert(I3CLSimLightSourceConstPtr &, uint32_t, secondary_callback, step_callback) = 0;
+    virtual I3MCTreePtr Convert(I3CLSimLightSourceConstPtr &, I3CLSimStepFactoryPtr, secondary_callback, step_callback) = 0;
     
     /**
      * Sets the wavelength bias. Set this to a constant value
@@ -41,8 +42,6 @@ public:
      * Will throw if used after the call to Initialize().
      */
     virtual void SetMediumProperties(I3CLSimMediumPropertiesConstPtr mediumProperties) {};
-    
-    virtual void SetRandomService(I3RandomServicePtr random) = 0;
     
     virtual void Initialize() = 0;
     virtual bool IsInitialized() const = 0;

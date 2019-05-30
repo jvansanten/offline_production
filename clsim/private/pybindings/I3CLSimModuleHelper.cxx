@@ -44,7 +44,7 @@ void register_I3ModuleHelper()
     bp::def("makeCherenkovWavelengthGenerator", &I3CLSimModuleHelper::makeCherenkovWavelengthGenerator);
     bp::def("makeWavelengthGenerator", &I3CLSimModuleHelper::makeWavelengthGenerator);
     bp::def("initializeOpenCL", &I3CLSimModuleHelper::initializeOpenCL,
-        (bp::arg("openCLDevice"), "randomService", "geometry", "mediumProperties",
+        (bp::arg("openCLDevice"), "geometry", "mediumProperties",
 	"wavelengthGenerationBias", "wavelengthGenerators",
 	bp::arg("enableDoubleBuffering")=false, bp::arg("doublePrecision")=false,
 	bp::arg("stopDetectedPhotons")=true, bp::arg("saveAllPhotons")=false,

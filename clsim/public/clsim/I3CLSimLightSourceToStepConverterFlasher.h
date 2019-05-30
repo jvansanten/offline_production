@@ -107,8 +107,6 @@ public:
 
     virtual void SetMaxBunchSize(uint64_t num);
 
-    virtual void SetRandomService(I3RandomServicePtr random);
-
     virtual void SetWlenBias(I3CLSimFunctionConstPtr wlenBias);
 
     virtual void SetMediumProperties(I3CLSimMediumPropertiesConstPtr mediumProperties);
@@ -117,7 +115,7 @@ public:
 
     virtual bool IsInitialized() const;
     
-    virtual void EnqueueLightSource(const I3CLSimLightSource &lightSource, uint32_t identifier);
+    virtual void EnqueueLightSource(const I3CLSimLightSource &lightSource, I3CLSimStepFactoryPtr);
     
     virtual void EnqueueBarrier();
     
@@ -132,9 +130,10 @@ private:
     I3CLSimStepSeriesConstPtr MakeSteps(bool &barrierWasReset);
 
     void FillStep(I3CLSimStep &step,
+                  I3RandomServicePtr &randomService,
                   uint32_t numberOfPhotons,
-                  const I3CLSimFlasherPulse &flasherPulse,
-                  uint32_t identifier);
+                  const I3CLSimFlasherPulse &flasherPulse
+                  );
 
     ///////////////
     // definitions used in the internal queue
@@ -142,16 +141,12 @@ private:
     struct LightSourceData_t {
         bool isBarrier;
         I3CLSimFlasherPulse flasherPulse;
-        uint32_t identifier;
+        I3CLSimStepFactoryPtr stepFactory;
         
         uint64_t numPhotonsWithBias;
     };
     std::deque<LightSourceData_t> inputQueue_;
 
-    
-    
-    I3RandomServicePtr randomService_;
-    
     bool initialized_;
     bool barrier_is_enqueued_;
     uint64_t bunchSizeGranularity_;

@@ -317,8 +317,7 @@ def setupDetector(GCDFile,
                 UseI3PropagatorService=UseI3PropagatorService,
                 IgnoreSubdetectors=IgnoreSubdetectors,)
 
-def setupPropagators(RandomService,
-                     DetectorParams,
+def setupPropagators(DetectorParams,
                      UseCPUs=False,
                      UseGPUs=True,
                      UseOnlyDeviceNumber=None,
@@ -346,7 +345,7 @@ def setupPropagators(RandomService,
     )
     
     def create_converter(device):
-        return clsim.initializeOpenCL(device, RandomService, geometry,
+        return clsim.initializeOpenCL(device, geometry,
             mediumProperties, wavelengthGenerationBias, clsim.I3CLSimRandomValuePtrSeries(wavelengthGenerators),
             pancakeFactor=DetectorParams['DOMPancakeFactor'],
             enableDoubleBuffering=EnableDoubleBuffering,

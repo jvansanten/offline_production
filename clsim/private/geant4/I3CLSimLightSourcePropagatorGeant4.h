@@ -62,8 +62,6 @@ public:
 
     // inherited:
 
-    virtual void SetRandomService(I3RandomServicePtr random);
-
     /**
      * Sets the wavelength bias. Set this to a constant value
      * of 1 if you do not need biased photon generation.
@@ -93,15 +91,13 @@ public:
     virtual bool IsInitialized() const;
     
     virtual bool IsValidForLightSource(const I3CLSimLightSource &source) { return source.GetType() == I3CLSimLightSource::Particle; };
-    virtual I3MCTreePtr Convert(I3CLSimLightSourceConstPtr &, uint32_t, secondary_callback, step_callback);
+    virtual I3MCTreePtr Convert(I3CLSimLightSourceConstPtr &, I3CLSimStepFactoryPtr, secondary_callback, step_callback);
     
 private:
     void LogGeant4Messages(bool allAsWarn=false) const;
 
     mutable boost::shared_ptr<I3CLSimQueue<boost::shared_ptr<std::pair<const std::string, bool> > > > queueFromGeant4Messages_;
-    
-    I3RandomServicePtr randomService_;
-    uint32_t randomSeed_;
+
     std::string physicsListName_;
     double maxBetaChangePerStep_;
     uint32_t maxNumPhotonsPerStep_;

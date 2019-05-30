@@ -48,6 +48,7 @@ my_traysegment = icetray.traysegment if hasattr(icetray, "traysegment") else unc
 @my_traysegment
 def I3CLSimMakePhotons(tray, name,
                        GCDFile,
+                       NWorkers=None,
                        UseCPUs=False,
                        UseGPUs=True,
                        UseOnlyDeviceNumber=None,
@@ -57,7 +58,6 @@ def I3CLSimMakePhotons(tray, name,
                        FlasherPulseSeriesName=None,
                        PhotonSeriesName="PhotonSeriesMap",
                        MCPESeriesName="MCPESeriesMap",
-                       RandomService=None,
                        IceModelLocation=expandvars("$I3_BUILD/ice-models/resources/models/spice_mie"),
                        DisableTilt=False,
                        UnWeightedPhotons=False,
@@ -136,11 +136,6 @@ def I3CLSimMakePhotons(tray, name,
     :param PhotonSeriesName:
         Configure this to enable writing an I3PhotonSeriesMap containing
         all photons that reached the DOM surface.
-    :param RandomService:
-        Set this to an instance of a I3RandomService. Alternatively,
-        you can specify the name of a configured I3RandomServiceFactory
-        added to I3Tray using tray.AddService(). If you don't configure
-        this, the default I3RandomServiceFactory will be used.
     :param IceModelLocation:
         Set this either to a directory containing a PPC-compatible
         ice description (icemodel.dat, icemodel.par and cfg.txt) or
@@ -260,7 +255,7 @@ def I3CLSimMakePhotons(tray, name,
         print("\"DOMOversizeFactor=1.\" will still apply a constant weighting factor of DOMOversizeFactor**2.")
         print("If this is what you want, you can safely ignore this warning.")
         print("********************")
-        
+
     if UnshadowedFraction<=0:
         raise RuntimeError("UnshadowedFraction must be a positive number")
 
@@ -294,7 +289,7 @@ def I3CLSimMakePhotons(tray, name,
         UseOnlyDeviceNumber=UseOnlyDeviceNumber
 	)
 
-    converters = setupPropagators(RandomService, clsimParams,
+    converters = setupPropagators(clsimParams,
         UseGPUs=UseGPUs,
         UseCPUs=UseCPUs,
         OverrideApproximateNumberOfWorkItems=OverrideApproximateNumberOfWorkItems,
@@ -310,14 +305,14 @@ def I3CLSimMakePhotons(tray, name,
     # stash server instance in the context to keep it alive
     tray.context[name+'CLSimServer'] = server
 
-    if UseGPUs:
+    if UseGPUs and NWorkers and NWorkers <= 1:
         if UseI3PropagatorService:
             logging.log_warn("Propagating muons and photons in the same process. This may starve your GPU.", unit="clsim")
         if UseGeant4:
             logging.log_warn("Running Geant and photon propagation in the same process. This will likely starve your GPU.", unit="clsim")
 
-    module_config = \
-    tray.Add(I3CLSimMakePhotonsWithServer, name,
+    segment = I3CLSimMakePhotonsWithServer
+    args = dict(
         ServerAddress=address,
         DetectorSettings=clsimParams,
         MCTreeName=MCTreeName,
@@ -326,12 +321,22 @@ def I3CLSimMakePhotons(tray, name,
         FlasherPulseSeriesName=FlasherPulseSeriesName,
         PhotonSeriesName=PhotonSeriesName,
         MCPESeriesName=MCPESeriesName,
-        RandomService=RandomService,
         ParticleHistory=ParticleHistory,
         ParticleHistoryGranularity=ParticleHistoryGranularity,
         ExtraArgumentsToI3CLSimClientModule=ExtraArgumentsToI3CLSimClientModule,
         If=If,
     )
+    if NWorkers is None:
+        module_config = tray.Add(segment, name, **args)
+    else:
+        from icecube.clsim.AsyncTap import AsyncTap
+        module_config = None
+        tray.Add(AsyncTap, name,
+            Segment=segment,
+            Args=args,
+            Prefix=GCDFile,
+            NWorkers=NWorkers
+        )
 
     class GatherStatistics(icetray.I3Module):
         """Mimick the summary stage of I3CLSimModule::Finish()"""
@@ -357,7 +362,6 @@ def I3CLSimMakePhotonsWithServer(tray, name,
                        FlasherPulseSeriesName=None,
                        PhotonSeriesName="PhotonSeriesMap",
                        MCPESeriesName="MCPESeriesMap",
-                       RandomService=None,
                        ParticleHistory=False,
                        ParticleHistoryGranularity=20*icetray.I3Units.m,
                        ExtraArgumentsToI3CLSimClientModule=dict(),
@@ -403,11 +407,6 @@ def I3CLSimMakePhotonsWithServer(tray, name,
         memory overhead for bright events.
     :param MCPESeriesName:
         Configure this to enable writing an I3MCPESeriesMap.
-    :param RandomService:
-        Set this to an instance of a I3RandomService. Alternatively,
-        you can specify the name of a configured I3RandomServiceFactory
-        added to I3Tray using tray.AddService(). If you don't configure
-        this, the default I3RandomServiceFactory will be used.
     :param ParticleHistory:
         Store secondary particles produced by particle propagators (e.g.
         Geant4, PROPOSAL) in the MCTree.
@@ -444,11 +443,11 @@ def I3CLSimMakePhotonsWithServer(tray, name,
     else:
         if (FlasherPulseSeriesName is not None) and (FlasherPulseSeriesName!=""):
             raise RuntimeError("You cannot use the FlasherPulseSeriesName and FlasherInfoVectName parameters at the same time!")
-        
+
         SimulateFlashers=True
         clSimFlasherPulseSeriesName = FlasherInfoVectName + "_pulses"
         clSimOMKeyMaskName = FlasherInfoVectName + "_OMKeys"
-        
+
         tray.AddModule(clsim.FlasherInfoVectToFlasherPulseSeriesConverter,
                        name + "_FlasherInfoVectToFlasherPulseSeriesConverter",
                        FlasherInfoVectName = FlasherInfoVectName,
@@ -489,7 +488,6 @@ def I3CLSimMakePhotonsWithServer(tray, name,
         stepGenerator = clsim.I3CLSimLightSourceToStepConverterAsync(1)
         stepGenerator.SetLightSourceParameterizationSeries(DetectorSettings['ParameterizationList'])
         stepGenerator.SetMediumProperties(DetectorSettings['MediumProperties'])
-        stepGenerator.SetRandomService(RandomService)
         stepGenerator.SetWlenBias(DetectorSettings['WavelengthGenerationBias'])
         propagators = []
         if DetectorSettings['UseI3PropagatorService']:
@@ -506,7 +504,6 @@ def I3CLSimMakePhotonsWithServer(tray, name,
     if clsimModuleArgs['MCPESeriesMapName']:
         # convert photons to MCPE in the worker thread of I3CLSimClientModule
         clsimModuleArgs['MCPEGenerator'] = clsim.I3CLSimPhotonToMCPEConverterForDOMs(
-            RandomService,
             DetectorSettings['WavelengthAcceptance'],
             DetectorSettings['AngularAcceptance']
         )

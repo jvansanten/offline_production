@@ -30,6 +30,7 @@
 #include <dataclasses/physics/I3Particle.h>
 
 #include <clsim/I3CLSimStep.h>
+#include <clsim/I3CLSimStepFactory.h>
 #include <boost/preprocessor/seq.hpp>
 
 #include <icetray/python/list_indexing_suite.hpp>
@@ -73,6 +74,28 @@ struct ConstPtr_to_python
     }
 };
 
+namespace {
+
+bp::list GetRNGCounter(const I3CLSimStep &step)
+{
+    auto counter = step.GetRNGCounter();
+    bp::list out;
+    for(auto val : counter)
+        out.append(val);
+    return out;
+}
+
+bp::list GetRNGKey(const I3CLSimStep &step)
+{
+    auto counter = step.GetRNGKey();
+    bp::list out;
+    for(auto val : counter)
+        out.append(val);
+    return out;
+}
+
+}
+
 void register_I3CLSimStep()
 {
     {
@@ -98,6 +121,9 @@ void register_I3CLSimStep()
 
         .add_property("dummy1", &I3CLSimStep::GetDummy1, &I3CLSimStep::SetDummy1)
         .add_property("dummy2", &I3CLSimStep::GetDummy2, &I3CLSimStep::SetDummy2)
+
+        .add_property("rngKey", &GetRNGKey)
+        .add_property("rngCounter", &GetRNGCounter)
 
         .add_property("pos", &I3CLSimStep::GetPos, &I3CLSimStep::SetPos)
         .add_property("dir", &I3CLSimStep::GetDir, SetDir_oneary)
@@ -125,5 +151,13 @@ void register_I3CLSimStep()
     
     // make python accept boost::shared_ptr<const blah>.. this is slightly evil bacause it uses const_cast:
     bp::to_python_converter<I3CLSimStepSeriesConstPtr, ConstPtr_to_python<I3CLSimStepSeries> >();
+
+    {
+        bp::class_<I3CLSimStepFactory, boost::shared_ptr<I3CLSimStepFactory> >(
+            "I3CLSimStepFactory",
+            bp::init<uint64_t,uint32_t,uint32_t>((bp::arg("frameKey"), "lightSourceIndex", "lightSourceIdentifier")))
+            .def("createStep", &I3CLSimStepFactory::createStep)
+        ;
+    }
 
 }

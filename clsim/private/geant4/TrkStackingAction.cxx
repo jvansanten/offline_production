@@ -82,7 +82,7 @@ G4ClassificationOfNewTrack TrkStackingAction::ClassifyNewTrack(const G4Track * a
     I3CLSimLightSourceConstPtr lightSource = boost::make_shared<I3CLSimLightSource>(particle);
     
     // Forget this particle if it can be handled elsewhere
-    if (eventInformation->emitSecondary(lightSource, eventInformation->currentExternalParticleID))
+    if (eventInformation->emitSecondary(lightSource, eventInformation->stepFactory))
         return fKill;
     else
         return fUrgent;

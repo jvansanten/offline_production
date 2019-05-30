@@ -32,6 +32,7 @@
 #include "phys-services/I3RandomService.h"
 
 #include "clsim/I3CLSimStep.h"
+#include "clsim/I3CLSimStepFactory.h"
 #include "clsim/I3CLSimMediumProperties.h"
 #include "clsim/I3CLSimLightSourceParameterization.h"
 #include "clsim/function/I3CLSimFunction.h"
@@ -77,13 +78,6 @@ public:
      * Will throw if used after the call to Initialize().
      */
     virtual void SetMaxBunchSize(uint64_t num) = 0;
-
-    /**
-     * Sets the random number generator service.
-     * This should be an instance of I3RandomService.
-     * Will throw if used after the call to Initialize().
-     */
-    virtual void SetRandomService(I3RandomServicePtr random) = 0;
 
     /**
      * Sets the wavelength bias. Set this to a constant value
@@ -141,7 +135,7 @@ public:
      * 
      * Will throw if not initialized.
      */
-    virtual void EnqueueLightSource(const I3CLSimLightSource &lightSource, uint32_t identifier) = 0;
+    virtual void EnqueueLightSource(const I3CLSimLightSource &lightSource, I3CLSimStepFactoryPtr) = 0;
 
     /**
      * Adds a "barrier" to the particle queue. This will keep the

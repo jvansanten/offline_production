@@ -18,10 +18,6 @@ def setup_converter(useGeant4=False):
         ppcConverter = clsim.I3CLSimLightSourceToStepConverterPPC(photonsPerStep=200)
 
     # initialize it
-    randomGen = phys_services.I3SPRNGRandomService(
-        seed = 123456,
-        nstreams = 10000,
-        streamnum = 1)
     mediumProperties = clsim.MakeIceCubeMediumProperties()
 
     #DOMRadius = 0.16510*icetray.I3Units.m # 13" diameter
@@ -31,7 +27,6 @@ def setup_converter(useGeant4=False):
 
     # lets set it up
     ppcConverter.SetMediumProperties(mediumProperties)
-    ppcConverter.SetRandomService(randomGen)
     ppcConverter.SetWlenBias(domAcceptance)
 
     ppcConverter.SetMaxBunchSize(10240)
@@ -49,7 +44,8 @@ def gen_steps(particle, converter, copies=1):
         lightSource = clsim.I3CLSimLightSource(particle)
         
         # put it in the queue
-        converter.EnqueueLightSource(lightSource, i)
+        # (I3CLSimStepFactory provides an independent random number sequence for each combination of frameKey/lightSourceIndex)
+        converter.EnqueueLightSource(lightSource, clsim.I3CLSimStepFactory(37, i, i))
 
     # tell the converter that we want all the results now
     converter.EnqueueBarrier()

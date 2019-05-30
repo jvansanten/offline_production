@@ -82,9 +82,6 @@ void I3CLSimLightSourceToStepConverterPPC::Initialize()
     if (initialized_)
         throw I3CLSimLightSourceToStepConverter_exception("I3CLSimLightSourceToStepConverterPPC already initialized!");
 
-    if (!randomService_)
-        throw I3CLSimLightSourceToStepConverter_exception("RandomService not set!");
-
     if (!wlenBias_)
         throw I3CLSimLightSourceToStepConverter_exception("WlenBias not set!");
 
@@ -97,12 +94,8 @@ void I3CLSimLightSourceToStepConverterPPC::Initialize()
     if (maxBunchSize_%bunchSizeGranularity_ != 0)
         throw I3CLSimLightSourceToStepConverter_exception("MaxBunchSize is not a multiple of BunchSizeGranularity!");
     
-    // initialize a fast rng
-    rngA_ = 1640531364; // magic number from numerical recipies
-    rngState_ = mwcRngInitState(randomService_, rngA_);
-    
     // initialize the pre-calculator threads
-    preCalc_ = boost::shared_ptr<GenerateStepPreCalculator>(new GenerateStepPreCalculator(randomService_, /*a=*/0.39, /*b=*/2.61));
+    preCalc_ = boost::shared_ptr<GenerateStepPreCalculator>(new GenerateStepPreCalculator(/*a=*/0.39, /*b=*/2.61));
 
     // make a copy of the medium properties
     {
@@ -169,21 +162,13 @@ void I3CLSimLightSourceToStepConverterPPC::SetWlenBias(I3CLSimFunctionConstPtr w
     initialized_=false;
 }
 
-void I3CLSimLightSourceToStepConverterPPC::SetRandomService(I3RandomServicePtr random)
-{
-    if (initialized_)
-        throw I3CLSimLightSourceToStepConverter_exception("I3CLSimLightSourceToStepConverterPPC already initialized!");
-    
-    randomService_=random;
-}
-
 void I3CLSimLightSourceToStepConverterPPC::SetMediumProperties(I3CLSimMediumPropertiesConstPtr mediumProperties)
 {
     mediumProperties_=mediumProperties;
     initialized_=false;
 }
 
-void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLightSource &lightSource, uint32_t identifier)
+void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLightSource &lightSource, I3CLSimStepFactoryPtr stepFactory)
 {
     if (!initialized_)
         throw I3CLSimLightSourceToStepConverter_exception("I3CLSimLightSourceToStepConverterPPC is not initialized!");
@@ -195,6 +180,7 @@ void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLight
         throw I3CLSimLightSourceToStepConverter_exception("The I3CLSimLightSourceToStepConverterPPC parameterization only works on particles.");
     
     const I3Particle &particle = lightSource.GetParticle();
+    I3RandomServicePtr randomService = stepFactory->GetRandomStream();
     
     // determine current layer
     uint32_t mediumLayer =static_cast<uint32_t>(std::max(0.,(particle.GetPos().GetZ()-mediumProperties_->GetLayersZStart())/(mediumProperties_->GetLayersHeight())));
@@ -292,7 +278,7 @@ void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLight
         if (shower_params.emScaleSigma != 0.) {
             do {
                 f=shower_params.emScale +
-                    shower_params.emScaleSigma*randomService_->Gaus(0.,1.);
+                    shower_params.emScaleSigma*randomService->Gaus(0.,1.);
             } while((f<0.) || (1.<f));
         }
         
@@ -304,7 +290,7 @@ void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLight
             log_debug("HUGE EVENT: (cascade) meanNumPhotons=%f, nph=%f, E=%f (approximating possion by gaussian)", meanNumPhotons, nph, E);
             double numPhotonsDouble=0;
             do {
-                numPhotonsDouble = randomService_->Gaus(meanNumPhotons, std::sqrt(meanNumPhotons));
+                numPhotonsDouble = randomService->Gaus(meanNumPhotons, std::sqrt(meanNumPhotons));
             } while (numPhotonsDouble<0.);
             
             if (numPhotonsDouble > static_cast<double>(std::numeric_limits<uint64_t>::max()))
@@ -313,7 +299,7 @@ void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLight
         }
         else
         {
-            numPhotons = static_cast<uint64_t>(randomService_->Poisson(meanNumPhotons));
+            numPhotons = static_cast<uint64_t>(randomService->Poisson(meanNumPhotons));
         }
         
         uint64_t usePhotonsPerStep = static_cast<uint64_t>(photonsPerStep_);
@@ -332,7 +318,7 @@ void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLight
             MuonStepData_t segmentStepGenInfo;
             segmentStepGenInfo.particle=particle;
             segmentStepGenInfo.particle=particle;
-            segmentStepGenInfo.particleIdentifier=identifier;
+            segmentStepGenInfo.stepFactory=stepFactory;
             segmentStepGenInfo.photonsPerStep=usePhotonsPerStep;
             segmentStepGenInfo.numSteps=numSteps;
             segmentStepGenInfo.numPhotonsInLastStep=numPhotonsInLastStep;
@@ -345,7 +331,7 @@ void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLight
             CascadeStepData_t cascadeStepGenInfo;
             cascadeStepGenInfo.particle=particle;
             cascadeStepGenInfo.particle=particle;
-            cascadeStepGenInfo.particleIdentifier=identifier;
+            cascadeStepGenInfo.stepFactory=stepFactory;
             cascadeStepGenInfo.photonsPerStep=usePhotonsPerStep;
             cascadeStepGenInfo.numSteps=numSteps;
             cascadeStepGenInfo.numPhotonsInLastStep=numPhotonsInLastStep;
@@ -390,7 +376,7 @@ void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLight
             log_debug("HUGE EVENT: (muon [   muon-like steps]) meanNumPhotons=%f, E=%f, len=%fm (approximating possion by gaussian)", meanNumPhotonsFromMuon, E, length/I3Units::m);
             double numPhotonsDouble=0;
             do {
-                numPhotonsDouble = randomService_->Gaus(meanNumPhotonsFromMuon, std::sqrt(meanNumPhotonsFromMuon));
+                numPhotonsDouble = randomService->Gaus(meanNumPhotonsFromMuon, std::sqrt(meanNumPhotonsFromMuon));
             } while (numPhotonsDouble<0.);
             
             if (numPhotonsDouble > static_cast<double>(std::numeric_limits<uint64_t>::max()))
@@ -399,7 +385,7 @@ void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLight
         }
         else
         {
-            numPhotonsFromMuon = static_cast<uint64_t>(randomService_->Poisson(meanNumPhotonsFromMuon));
+            numPhotonsFromMuon = static_cast<uint64_t>(randomService->Poisson(meanNumPhotonsFromMuon));
         }
         log_trace("Generating %" PRIu64 " muon-steps for muon (mean=%f)", numPhotonsFromMuon, meanNumPhotonsFromMuon);
 
@@ -414,7 +400,7 @@ void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLight
             log_debug("HUGE EVENT: (muon [cascade-like steps]) meanNumPhotons=%f, E=%f, len=%fm (approximating possion by gaussian)", meanNumPhotonsFromCascades, E, length/I3Units::m);
             double numPhotonsDouble=0;
             do {
-                numPhotonsDouble = randomService_->Gaus(meanNumPhotonsFromCascades, std::sqrt(meanNumPhotonsFromCascades));
+                numPhotonsDouble = randomService->Gaus(meanNumPhotonsFromCascades, std::sqrt(meanNumPhotonsFromCascades));
             } while (numPhotonsDouble<0.);
             
             if (numPhotonsDouble > static_cast<double>(std::numeric_limits<uint64_t>::max()))
@@ -423,7 +409,7 @@ void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLight
         }
         else
         {
-            numPhotonsFromCascades = static_cast<uint64_t>(randomService_->Poisson(meanNumPhotonsFromCascades));
+            numPhotonsFromCascades = static_cast<uint64_t>(randomService->Poisson(meanNumPhotonsFromCascades));
         }
         log_trace("Generating %" PRIu64 " cascade-steps for muon (mean=%f)", numPhotonsFromCascades, meanNumPhotonsFromCascades);
 
@@ -441,7 +427,7 @@ void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLight
 
         MuonStepData_t muonStepGenInfo;
         muonStepGenInfo.particle=particle;
-        muonStepGenInfo.particleIdentifier=identifier;
+        muonStepGenInfo.stepFactory=stepFactory;
         muonStepGenInfo.photonsPerStep=usePhotonsPerStep;
         muonStepGenInfo.numSteps=numStepsFromMuon;
         muonStepGenInfo.numPhotonsInLastStep=numPhotonsFromMuonInLastStep;
@@ -465,7 +451,7 @@ void I3CLSimLightSourceToStepConverterPPC::EnqueueLightSource(const I3CLSimLight
 
         //MuonStepData_t muonStepGenInfo;
         muonStepGenInfo.particle=particle;
-        muonStepGenInfo.particleIdentifier=identifier;
+        muonStepGenInfo.stepFactory=stepFactory;
         muonStepGenInfo.photonsPerStep=usePhotonsPerStep;
         muonStepGenInfo.numSteps=numStepsFromCascades;
         muonStepGenInfo.numPhotonsInLastStep=numPhotonsFromCascadesInLastStep;
@@ -519,11 +505,9 @@ bool I3CLSimLightSourceToStepConverterPPC::MoreStepsAvailable() const
 }
 
 I3CLSimLightSourceToStepConverterPPC::MakeSteps_visitor::MakeSteps_visitor
-(uint64_t &rngState, uint32_t rngA,
- uint64_t maxNumStepsPerStepSeries,
+(uint64_t maxNumStepsPerStepSeries,
  GenerateStepPreCalculator &preCalc)
-:rngState_(rngState), rngA_(rngA),
-maxNumStepsPerStepSeries_(maxNumStepsPerStepSeries),
+: maxNumStepsPerStepSeries_(maxNumStepsPerStepSeries),
 preCalc_(preCalc)
 {;}
 
@@ -533,13 +517,14 @@ void I3CLSimLightSourceToStepConverterPPC::MakeSteps_visitor::FillStep
  uint64_t photonsPerStep,
  double particleDir_x, double particleDir_y, double particleDir_z) const
 {
-    const double longitudinalPos = data.pb*I3CLSimLightSourceToStepConverterUtils::gammaDistributedNumber(data.pa, rngState_, rngA_)*I3Units::m;
+    I3RandomService &randomService = *data.stepFactory->GetRandomStream();
+    const double longitudinalPos = data.pb*I3CLSimLightSourceToStepConverterUtils::gammaDistributedNumber(data.pa, randomService)*I3Units::m;
     GenerateStep(newStep,
                  data.particle,
                  particleDir_x, particleDir_y, particleDir_z,
-                 data.particleIdentifier,
                  photonsPerStep,
                  longitudinalPos,
+                 randomService,
                  preCalc_);
 }
 
@@ -550,19 +535,19 @@ void I3CLSimLightSourceToStepConverterPPC::MakeSteps_visitor::FillStep
  double particleDir_x, double particleDir_y, double particleDir_z) const
 {
     if (data.stepIsCascadeLike) {
-        const double longitudinalPos = mwcRngRandomNumber_co(rngState_, rngA_)*data.length;
+        I3RandomService &randomService = *data.stepFactory->GetRandomStream();
+        const double longitudinalPos = randomService.Uniform(data.length);
         GenerateStep(newStep,
                      data.particle,
                      particleDir_x, particleDir_y, particleDir_z,
-                     data.particleIdentifier,
                      photonsPerStep,
                      longitudinalPos,
+                     randomService,
                      preCalc_);
     } else {
         GenerateStepForMuon(newStep,
                             data.particle,
                             particleDir_x, particleDir_y, particleDir_z,
-                            data.particleIdentifier,
                             photonsPerStep,
                             data.length);
     }
@@ -585,7 +570,7 @@ I3CLSimLightSourceToStepConverterPPC::MakeSteps_visitor::operator()
     // make useNumSteps steps
     for (uint64_t i=0; i<useNumSteps; ++i)
     {
-        currentStepSeries->push_back(I3CLSimStep());
+        currentStepSeries->emplace_back(data.stepFactory->createStep());
         I3CLSimStep &newStep = currentStepSeries->back();
         FillStep(data, newStep, data.photonsPerStep, particleDir_x, particleDir_y, particleDir_z);
     }
@@ -599,7 +584,7 @@ I3CLSimLightSourceToStepConverterPPC::MakeSteps_visitor::operator()
         
         if (data.numPhotonsInLastStep > 0)
         {
-            currentStepSeries->push_back(I3CLSimStep());
+            currentStepSeries->emplace_back(data.stepFactory->createStep());
             I3CLSimStep &newStep = currentStepSeries->back();
             FillStep(data, newStep, data.numPhotonsInLastStep, particleDir_x, particleDir_y, particleDir_z);
         }
@@ -635,7 +620,7 @@ I3CLSimStepSeriesConstPtr I3CLSimLightSourceToStepConverterPPC::MakeSteps(bool &
     
     //  Let the visitor convert it into steps (the step pointer will be NULL if it is a barrier)
     std::pair<I3CLSimStepSeriesConstPtr, bool> retval =
-    boost::apply_visitor(MakeSteps_visitor(rngState_, rngA_, maxBunchSize_, *preCalc_), currentElement);
+    boost::apply_visitor(MakeSteps_visitor(maxBunchSize_, *preCalc_), currentElement);
     
     I3CLSimStepSeriesConstPtr &steps = retval.first;
     const bool entryCanBeRemoved = retval.second;
@@ -684,106 +669,15 @@ I3CLSimStepSeriesConstPtr I3CLSimLightSourceToStepConverterPPC::GetConversionRes
 
 /////// HELPERS
 
-I3CLSimLightSourceToStepConverterPPC::GenerateStepPreCalculator::GenerateStepPreCalculator(I3RandomServicePtr randomService,
+I3CLSimLightSourceToStepConverterPPC::GenerateStepPreCalculator::GenerateStepPreCalculator(
                                                      double angularDist_a,
-                                                     double angularDist_b,
-                                                     std::size_t numberOfValues)
+                                                     double angularDist_b)
 :
 one_over_angularDist_a_(1./angularDist_a),
 angularDist_b_(angularDist_b),
-angularDist_I_(1.-std::exp(-angularDist_b*std::pow(2., angularDist_a)) ),
-numberOfValues_(numberOfValues),
-index_(numberOfValues),
-queueFromFeederThreads_(10)  // size 10 for 5 threads
+angularDist_I_(1.-std::exp(-angularDist_b*std::pow(2., angularDist_a)) )
 {
-    const unsigned int numFeederThreads = 4;
-    const uint32_t rngAs[8] = { // numbers taken from Numerical Recipies
-        3874257210,
-        2936881968,
-        2811536238,
-        2654432763,
-        4294957665,
-        4294963023,
-        4162943475,
-        3947008974,
-    };
-    
-    // start threads
-    for (unsigned int i=0;i<numFeederThreads;++i)
-    {
-        const uint64_t rngState = mwcRngInitState(randomService, rngAs[i]);
-        boost::shared_ptr<boost::thread> newThread(new boost::thread(boost::bind(&I3CLSimLightSourceToStepConverterPPC::GenerateStepPreCalculator::FeederThread, this, i, rngState, rngAs[i])));
-        feederThreads_.push_back(newThread);
-    }
 
-}
-
-I3CLSimLightSourceToStepConverterPPC::GenerateStepPreCalculator::~GenerateStepPreCalculator()
-{
-    // terminate threads
-    
-    for (std::size_t i=0;i<feederThreads_.size();++i)
-    {
-        if (!feederThreads_[i]) continue;
-        if (!feederThreads_[i]->joinable()) continue;
-
-        log_debug("Stopping the worker thread #%zu", i);
-        feederThreads_[i]->interrupt();
-        
-        // wait for the thread to stop (not indefinitely, just to be sure)
-        const bool did_join = feederThreads_[i]->timed_join(boost::posix_time::seconds(10));
-        
-        if (did_join) {
-            log_debug("Worker thread #%zu stopped.", i);
-        } else {
-            log_warn("Worker thread #%zu did not stop. leaking memory.", i);
-        }
-    }
-
-    feederThreads_.clear();
-}
-
-void I3CLSimLightSourceToStepConverterPPC::GenerateStepPreCalculator::FeederThread(unsigned int threadId,
-                                                                                uint64_t initialRngState,
-                                                                                uint32_t rngA)
-{
-    // set up storage
-    uint64_t rngState = initialRngState;
-    
-    for (;;)
-    {
-        // make a bunch of steps
-        boost::shared_ptr<queueVector_t> outputVector(new queueVector_t());
-        outputVector->reserve(numberOfValues_);
-        
-        // calculate values
-        for (std::size_t i=0;i<numberOfValues_;++i)
-        {
-            const double cos_val=std::max(1.-std::pow(-std::log(1.-mwcRngRandomNumber_co(rngState, rngA)*angularDist_I_)/angularDist_b_, one_over_angularDist_a_), -1.);
-            const double sin_val=std::sqrt(1.-cos_val*cos_val);
-            const double random_value = mwcRngRandomNumber_co(rngState, rngA);
-            
-            outputVector->push_back(std::make_pair(std::make_pair(sin_val, cos_val), random_value));
-        }
-
-        try 
-        {
-            // this blocks in case the queue is full
-            queueFromFeederThreads_.Put(outputVector);
-            log_debug("thread %u just refilled the queue", threadId);
-        }
-        catch(boost::thread_interrupted &i)
-        {
-            break;
-        }
-    }
-}
-
-void I3CLSimLightSourceToStepConverterPPC::GenerateStepPreCalculator::RegenerateValues()
-{
-    currentVector_ = queueFromFeederThreads_.Get();
-    log_trace("queueSize=%zu", queueFromFeederThreads_.size());
-    index_=0;
 }
 
 
@@ -792,13 +686,13 @@ void I3CLSimLightSourceToStepConverterPPC::GenerateStepPreCalculator::Regenerate
 void I3CLSimLightSourceToStepConverterPPC::GenerateStep(I3CLSimStep &newStep,
                                                         const I3Particle &p,
                                                         double particleDir_x, double particleDir_y, double particleDir_z,
-                                                        uint32_t identifier,
                                                         uint32_t photonsPerStep,
                                                         const double &longitudinalPos,
+                                                        I3RandomService &randomService,
                                                         GenerateStepPreCalculator &preCalc)
 {
     double angular_cos, angular_sin, random_value;
-    preCalc.GetAngularCosSinValue(angular_cos, angular_sin, random_value);
+    preCalc.GetAngularCosSinValue(randomService, angular_cos, angular_sin, random_value);
     
     double step_dx = particleDir_x;
     double step_dy = particleDir_y;
@@ -814,7 +708,6 @@ void I3CLSimLightSourceToStepConverterPPC::GenerateStep(I3CLSimStep &newStep,
     newStep.SetNumPhotons(photonsPerStep);
     newStep.SetWeight(1.);
     newStep.SetBeta(1.);
-    newStep.SetID(identifier);
     newStep.SetSourceType(0); // cherenkov emission
     
     // rotate in-place
@@ -828,7 +721,6 @@ void I3CLSimLightSourceToStepConverterPPC::GenerateStep(I3CLSimStep &newStep,
 void I3CLSimLightSourceToStepConverterPPC::GenerateStepForMuon(I3CLSimStep &newStep,
                                                                const I3Particle &p,
                                                                double particleDir_x, double particleDir_y, double particleDir_z,
-                                                               uint32_t identifier,
                                                                uint32_t photonsPerStep,
                                                                double length)
 {
@@ -843,7 +735,6 @@ void I3CLSimLightSourceToStepConverterPPC::GenerateStepForMuon(I3CLSimStep &newS
     newStep.SetNumPhotons(photonsPerStep);
     newStep.SetWeight(1.);
     newStep.SetBeta(1.);
-    newStep.SetID(identifier);
     newStep.SetSourceType(0); // cherenkov emission
 }
 

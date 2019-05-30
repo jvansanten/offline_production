@@ -38,7 +38,7 @@
 // //#define dbg_printf(format, ...)
 
 // #ifdef PRINTF_ENABLED
-// enable printf for CPU
+// // enable printf for CPU
 // #pragma OPENCL EXTENSION cl_amd_printf : enable
 // #define dbg_printf(format, ...) printf(format, ##__VA_ARGS__)
 // #else
@@ -59,7 +59,9 @@ struct __attribute__ ((packed)) I3CLSimStep
     uchar sourceType;                                       //     8bit unsigned
     uchar dummy1;                                           //     8bit unsigned
     ushort dummy2;                                          //    16bit unsigned
-                                                            // total: 12x 32bit float = 48 bytes
+    clsim_rng_key_t rngKey;
+    clsim_rng_ctr_t rngCounter;
+                                                            // total: 18x 32bit float = 72 bytes
 };
 
 struct __attribute__ ((packed)) I3CLSimPhoton 
@@ -103,12 +105,6 @@ void scatterDirectionByAngle(floating_t cosa,
     floating_t sina,
     floating4_t *direction,
     floating_t randomNumber);
-
-inline void createPhotonFromTrack(struct I3CLSimStep *step,
-    const floating4_t stepDir,
-    RNG_ARGS,
-    floating4_t *photonPosAndTime,
-    floating4_t *photonDirAndWlen);
 
 #ifdef DOUBLE_PRECISION
 inline float2 sphDirFromCar(double4 carDir);

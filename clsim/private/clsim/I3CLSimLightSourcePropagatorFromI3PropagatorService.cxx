@@ -1,6 +1,7 @@
 
 #include "clsim/I3CLSimLightSourcePropagatorFromI3PropagatorService.h"
 #include "clsim/I3CLSimLightSource.h"
+#include "clsim/I3CLSimStepFactory.h"
 
 I3CLSimLightSourcePropagatorFromI3PropagatorService::I3CLSimLightSourcePropagatorFromI3PropagatorService(
     I3ParticleTypePropagatorServiceMapPtr particleToPropagatorServiceMap,
@@ -30,13 +31,6 @@ I3CLSimLightSourcePropagatorFromI3PropagatorService::I3CLSimLightSourcePropagato
 I3CLSimLightSourcePropagatorFromI3PropagatorService::~I3CLSimLightSourcePropagatorFromI3PropagatorService()
 {}
 
-void I3CLSimLightSourcePropagatorFromI3PropagatorService::SetRandomService(I3RandomServicePtr rng)
-{
-  for (auto &pair : *particleToPropagatorServiceMap_){
-    pair.second->SetRandomNumberGenerator(rng);
-  }
-}
-
 bool I3CLSimLightSourcePropagatorFromI3PropagatorService::IsValidForLightSource(const I3CLSimLightSource &source)
 {
     // accept any particle in the type list that has not already been propagated
@@ -45,8 +39,8 @@ bool I3CLSimLightSourcePropagatorFromI3PropagatorService::IsValidForLightSource(
         && (particleToPropagatorServiceMap_->find(source.GetParticle().GetType()) != particleToPropagatorServiceMap_->end());
 }
 
-I3MCTreePtr I3CLSimLightSourcePropagatorFromI3PropagatorService::Convert(I3CLSimLightSourceConstPtr &lightSource, uint32_t identifier,
-    secondary_callback emitSecondary, step_callback)
+I3MCTreePtr I3CLSimLightSourcePropagatorFromI3PropagatorService::Convert(I3CLSimLightSourceConstPtr &lightSource,
+    I3CLSimStepFactoryPtr stepFactory, secondary_callback emitSecondary, step_callback)
 {
     std::deque<std::pair<I3Particle, I3PropagatorServicePtr>> queue;
     std::map<I3ParticleID, I3ParticleID> orphans;
@@ -62,10 +56,16 @@ I3MCTreePtr I3CLSimLightSourcePropagatorFromI3PropagatorService::Convert(I3CLSim
     auto emitNonDark = [&](const I3Particle &particle) {
         if (particle.GetShape() != I3Particle::Dark) {
             I3CLSimLightSourceConstPtr secondary = boost::make_shared<I3CLSimLightSource>(particle);
-            emitSecondary(secondary, identifier);
+            emitSecondary(secondary, stepFactory);
         }
     };
-    
+
+    // Distribute per-source random number generator to propagators
+    I3RandomServicePtr rng = stepFactory->GetRandomStream();
+    for (auto &pair : *particleToPropagatorServiceMap_){
+      pair.second->SetRandomNumberGenerator(rng);
+    }
+
     while (!queue.empty()) {
         // retrieve the first entry
         auto &item = queue.front();

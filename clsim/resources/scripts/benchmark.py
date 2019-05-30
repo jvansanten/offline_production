@@ -8,6 +8,10 @@ from os.path import expandvars
 
 usage = "usage: %prog [options] inputfile"
 parser = ArgumentParser(usage)
+parser.add_argument("-o", "--outputfile", default=None,
+                  help="Write I3 output to this file")
+parser.add_argument("--keep-photons", default=False, action="store_true",
+                  help="Keep I3CompressedPhotonSeriesMap in the frame")
 parser.add_argument("-n", "--numevents", type=int, default=1,
                   dest="NUMEVENTS", help="The number of events per run")
 parser.add_argument("-s", "--seed",type=int,default=12345,
@@ -22,15 +26,23 @@ parser.add_argument("--energy", default=1e3, type=float,
                   dest="ENERGY", help="Particle energy in GeV")
 parser.add_argument("--type", default="EMinus",
                   dest="PARTICLE_TYPE", help="Particle type")
+parser.add_argument("--frame-number", type=int, default=1,
+                  help="The number of the first frame")
+parser.add_argument("--procs", type=int, default=None,
+                  help="Number of worker subprocesses to start")
 parser.add_argument("--icemodel", default=expandvars("$I3_BUILD/ice-models/resources/models/spice_lea"),
                   dest="ICEMODEL", help="A clsim ice model file/directory (ice models *will* affect performance metrics, always compare using the same model!)")
 parser.add_argument("--unweighted-photons", action="store_true",
                   help="Propagate all Cherenkov photons. This is ~13x slower than downsampling first.")
 parser.add_argument("--cable-position", help='explicitly simulate cable shadow in given position',
                   choices=('cable_shadow','led7'))
+parser.add_argument("--propagate-mctree", action="store_true", default=False,
+                  help="Run I3PropagatorServices in photon propagation loop")
+parser.add_argument("--use-geant",  action="store_true", default=False,
+                  dest="GEANT", help="generate steps with Geant")
 
 group = parser.add_mutually_exclusive_group()
-group.add_argument("--minimal-gcd",  action="store_true", default=False,
+parser.add_argument("--minimal-gcd",  action="store_true", default=False,
                   dest="MINIMALGCD", help="generate a trivial GCD from scratch with only 24 DOMs. There are fewer collision checks, so usually things are faster, but unrealistic.")
 group.add_argument("-g", "--gcd-file",
                   default="/cvmfs/icecube.opensciencegrid.org/data/GCD/GeoCalibDetectorStatus_AVG_55697-57531_PASS2_SPE_withStdNoise.i3.gz", dest="GCDFILE")
@@ -303,8 +315,15 @@ tray.AddModule(generateEvent, "generateEvent",
     # ZCoord = zCoord,
     )
 
+tray.AddModule("I3RNGKeyInjector",
+    Dataset=options.SEED,
+    Job=options.RUNNUMBER,
+    Frame=options.frame_number,
+)
+
 MCTreeName="I3MCTree"
-photonSeriesName = None
+MMCTrackListName=None if options.propagate_mctree else "MMCTrackList"
+photonSeriesName = "PhotonSeriesMap" if options.keep_photons else None
 
 kwargs = {}
 if options.cable_position:
@@ -312,13 +331,15 @@ if options.cable_position:
     kwargs['CableOrientation'] = GetIceCubeCableShadow.GetIceCubeCableShadow(getattr(GetIceCubeCableShadow, 'from_{}'.format(options.cable_position)))
 tray.AddSegment(clsim.I3CLSimMakeHits, "makeCLSimHits",
     GCDFile = options.GCDFILE,
+    NWorkers = options.procs,
     PhotonSeriesName = photonSeriesName,
     MCTreeName = MCTreeName,
-    RandomService = randomService,
     MCPESeriesName = "MCPESeriesMap",
+    UseGeant4 = options.GEANT,
     UnshadowedFraction = 0.95,
     UseGPUs=not options.USECPU,
     UseCPUs=options.USECPU,
+    DoNotParallelize=options.USECPU,
     UseOnlyDeviceNumber=options.DEVICE,
     IceModelLocation=options.ICEMODEL,
     DOMOversizeFactor=options.OVERSIZE,
@@ -328,6 +349,23 @@ tray.AddSegment(clsim.I3CLSimMakeHits, "makeCLSimHits",
 
 icetray.logging.set_level_for_unit('I3CLSimServer', 'INFO')
 icetray.logging.set_level_for_unit('I3CLSimStepToPhotonConverterOpenCL', 'INFO')
+
+if options.keep_photons:
+    def printy(frame):
+        mcpemap = frame["PhotonSeriesMap"]
+        npe = sum((sum((1 for p in mcpes)) for mcpes in mcpemap.values()))
+        key = frame['RNGKey'].value
+        dataset = key >> 44
+        job = key >> 24 & ((1<<20)-1)
+        frame = key & ((1<<20)-1)
+        print('{}.{}.{:03d}: {}'.format(dataset,job,frame, npe))
+    tray.Add(printy, Streams=[icetray.I3Frame.DAQ])
+
+if options.outputfile:
+    tray.Add("I3Writer",
+        Filename=options.outputfile,
+        Streams=[icetray.I3Frame.DAQ]
+    )
 
 from datetime import datetime
 t0 = datetime.now()

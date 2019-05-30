@@ -25,6 +25,7 @@
  */
 
 #include "clsim/I3CLSimLightSourceToStepConverter.h"
+#include "geant4/HepRandomEngineFromI3RandomService.h"
 #include "geant4/I3CLSimLightSourcePropagatorGeant4.h"
 
 #include <limits>
@@ -345,9 +346,6 @@ void I3CLSimLightSourcePropagatorGeant4::Initialize()
     if (initialized_)
         throw I3CLSimLightSourceToStepConverter_exception("I3CLSimLightSourcePropagatorGeant4 already initialized!");
 
-    if (!randomService_)
-        throw I3CLSimLightSourceToStepConverter_exception("RandomService not set!");
-
     if (!wlenBias_)
         throw I3CLSimLightSourceToStepConverter_exception("WlenBias not set!");
 
@@ -407,16 +405,38 @@ void I3CLSimLightSourcePropagatorGeant4::Initialize()
 
     //UI->ApplyCommand("/run/particle/dumpCutValues");
     
-    CLHEP::HepRandom::setTheSeed(randomSeed_); // value [0,900000000]
+    CLHEP::HepRandom::setTheEngine(NULL);
 
     initialized_=true;
 }
 
-I3MCTreePtr I3CLSimLightSourcePropagatorGeant4::Convert(I3CLSimLightSourceConstPtr &lightSource, uint32_t lightSourceIdentifier,
-    secondary_callback emitSecondary, step_callback emitStep)
+namespace {
+
+// CLHEP::HepRandom uses shared pointers internally, but won't take ownership
+// of anything passed in from the outside. Use RAII to swap the engine
+// temporarily.
+struct clhep_engine_replacement {
+    clhep_engine_replacement(I3RandomServicePtr randomService) :
+        previous_(CLHEP::HepRandom::getTheEngine()), randomService_(randomService)
+    {
+        CLHEP::HepRandom::setTheEngine(&randomService_);
+    }
+    ~clhep_engine_replacement()
+    {
+        CLHEP::HepRandom::setTheEngine(previous_);
+    }
+    CLHEP::HepRandomEngine *previous_;
+    HepRandomEngineFromI3RandomService randomService_;
+};
+
+}
+
+I3MCTreePtr I3CLSimLightSourcePropagatorGeant4::Convert(I3CLSimLightSourceConstPtr &lightSource,
+    I3CLSimStepFactoryPtr stepFactory, secondary_callback emitSecondary, step_callback emitStep)
 {
     const I3Particle &particle = lightSource->GetParticle();
     I3MCTreePtr mctree;
+    clhep_engine_replacement my_engine(stepFactory->GetRandomStream());
 
     // configure the Geant4 particle gun
     {
@@ -437,7 +457,7 @@ I3MCTreePtr I3CLSimLightSourcePropagatorGeant4::Convert(I3CLSimLightSourceConstP
     
     // set the current particle ID
     TrkEventAction *theEventAction = const_cast<TrkEventAction*>(dynamic_cast<const TrkEventAction*>(runManager_->GetUserEventAction()));
-    theEventAction->SetExternalParticleID(lightSourceIdentifier);
+    theEventAction->SetStepFactory(stepFactory);
     theEventAction->SetSecondaryCallback(emitSecondary);
     theEventAction->SetStepCallback(emitStep);
 
@@ -446,7 +466,7 @@ I3MCTreePtr I3CLSimLightSourcePropagatorGeant4::Convert(I3CLSimLightSourceConstP
     if (collectParticleHistory_)
         theTrackingAction->SetPrimary(particle);
 
-    G4cout << "Geant4: shooting a " << particle.GetTypeString() << " with id " << lightSourceIdentifier << " and E=" << particle.GetEnergy()/I3Units::GeV << "GeV." << G4endl;
+    G4cout << "Geant4: shooting a " << particle.GetTypeString() << " with id " << stepFactory->GetLightSourceID() << " and E=" << particle.GetEnergy()/I3Units::GeV << "GeV." << G4endl;
 
     // turn on the Geant4 beam!
     // (this fills the stepStore with steps and our particle list with
@@ -465,17 +485,6 @@ bool I3CLSimLightSourcePropagatorGeant4::IsInitialized() const
     LogGeant4Messages();
 
     return initialized_;
-}
-
-void I3CLSimLightSourcePropagatorGeant4::SetRandomService(I3RandomServicePtr random)
-{
-    if (initialized_)
-        throw I3CLSimLightSourceToStepConverter_exception("I3CLSimLightSourcePropagatorGeant4 already initialized!");
-    
-    randomService_=random;
-    
-    // TODO: eventually Geant4 should use the IceTray rng!!
-    randomSeed_ = randomService_->Integer(900000000);
 }
 
 void I3CLSimLightSourcePropagatorGeant4::SetWlenBias(I3CLSimFunctionConstPtr wlenBias)

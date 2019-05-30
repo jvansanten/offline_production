@@ -75,13 +75,6 @@ public:
     virtual void SetMaxBunchSize(uint64_t num);
 
     /**
-     * Sets the random service to use.
-     * This will stop the worker thread; restart it with
-     * a call to Initialize() before enqueuing steps.
-     */
-    virtual void SetRandomService(I3RandomServicePtr random);
-
-    /**
      * Sets the wavelength bias. Set this to a constant value
      * of 1 if you do not need biased photon generation.
      * The Cherenkov spectrum will be multiplied by this
@@ -130,7 +123,7 @@ public:
      * 
      * Will throw if not initialized.
      */
-    virtual void EnqueueLightSource(const I3CLSimLightSource &lightSource, uint32_t identifier);
+    virtual void EnqueueLightSource(const I3CLSimLightSource &lightSource, I3CLSimStepFactoryPtr);
     
     /**
      * Adds a "barrier" to the particle queue. This will keep the
@@ -184,7 +177,7 @@ public:
     
 private:
 
-    typedef std::pair<uint32_t, I3CLSimLightSourceConstPtr> ToGeant4Pair_t;
+    typedef std::pair<I3CLSimStepFactoryPtr, I3CLSimLightSourceConstPtr> ToGeant4Pair_t;
 
     void WorkerThread();
     void WorkerThread_impl(boost::this_thread::disable_interruption &di);
@@ -200,9 +193,7 @@ private:
 
     boost::shared_ptr<I3CLSimQueue<ToGeant4Pair_t> > queueToGeant4_;
     boost::shared_ptr<I3CLSimQueue<FromGeant4Pair_t> > queueFromGeant4_;
-    
-    I3RandomServicePtr randomService_;
-    
+
     bool initialized_;
     uint64_t bunchSizeGranularity_;
     uint64_t maxBunchSize_;

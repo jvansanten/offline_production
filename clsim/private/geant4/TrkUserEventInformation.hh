@@ -50,7 +50,7 @@ class TrkUserEventInformation : public G4VUserEventInformation
 public:
     TrkUserEventInformation(const I3CLSimLightSourcePropagator::secondary_callback &emitSecondary_,
                             const I3CLSimLightSourcePropagator::step_callback &emitStep_,
-                            uint32_t currentExternalParticleID_,
+                            I3CLSimStepFactoryPtr stepFactory_,
                             double maxRefractiveIndex_);
     virtual ~TrkUserEventInformation();
 
@@ -60,7 +60,7 @@ public:
     const I3CLSimLightSourcePropagator::secondary_callback &emitSecondary;
     const I3CLSimLightSourcePropagator::step_callback &emitStep;
     
-    uint32_t currentExternalParticleID;
+    I3CLSimStepFactoryPtr stepFactory;
     
     double maxRefractiveIndex;
     

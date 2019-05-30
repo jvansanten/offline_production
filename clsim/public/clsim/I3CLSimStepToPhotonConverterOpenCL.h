@@ -29,8 +29,6 @@
 
 #include "clsim/I3CLSimStepToPhotonConverter.h"
 
-#include "phys-services/I3RandomService.h"
-
 #include <boost/thread.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/locks.hpp>
@@ -64,8 +62,7 @@ struct I3CLSimStepToPhotonConverterOpenCL : public I3CLSimStepToPhotonConverter
 public:
     static const bool default_useNativeMath;
     
-    I3CLSimStepToPhotonConverterOpenCL(I3RandomServicePtr randomService,
-                                       bool useNativeMath=default_useNativeMath);
+    I3CLSimStepToPhotonConverterOpenCL(bool useNativeMath=default_useNativeMath);
     virtual ~I3CLSimStepToPhotonConverterOpenCL();
 
     /**
@@ -460,8 +457,6 @@ private:
     boost::shared_ptr<I3CLSimQueue<ToOpenCLPair_t> > queueToOpenCL_;
     boost::shared_ptr<I3CLSimQueue<I3CLSimStepToPhotonConverter::ConversionResult_t> > queueFromOpenCL_;
 
-    I3RandomServicePtr randomService_;
-    
     bool initialized_;
     bool compiled_;
     std::vector<I3CLSimRandomValueConstPtr> wlenGenerators_;
@@ -485,7 +480,7 @@ private:
     
     // some kernel sources loaded on construction
     std::string prependSource_;
-    std::string mwcrngKernelSource_;
+    std::string rngKernelSource_;
     std::string wlenGeneratorSource_;
     std::string wlenBiasSource_;
     std::string mediumPropertiesSource_;

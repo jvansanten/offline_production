@@ -73,8 +73,6 @@ public:
 
     virtual void SetMaxBunchSize(uint64_t num);
 
-    virtual void SetRandomService(I3RandomServicePtr random);
-
     virtual void SetWlenBias(I3CLSimFunctionConstPtr wlenBias);
 
     virtual void SetMediumProperties(I3CLSimMediumPropertiesConstPtr mediumProperties);
@@ -83,7 +81,7 @@ public:
 
     virtual bool IsInitialized() const;
     
-    virtual void EnqueueLightSource(const I3CLSimLightSource &lightSource, uint32_t identifier);
+    virtual void EnqueueLightSource(const I3CLSimLightSource &lightSource, I3CLSimStepFactoryPtr);
     
     virtual void EnqueueBarrier();
     
@@ -99,7 +97,7 @@ private:
     
     struct CascadeStepData_t {
         I3Particle particle;
-        uint32_t particleIdentifier;
+        I3CLSimStepFactoryPtr stepFactory;
         uint64_t photonsPerStep;
         uint64_t numSteps;
         uint64_t numPhotonsInLastStep;
@@ -108,7 +106,7 @@ private:
     };
     struct MuonStepData_t {
         I3Particle particle;
-        uint32_t particleIdentifier;
+        I3CLSimStepFactoryPtr stepFactory;
         uint64_t photonsPerStep;
         uint64_t numSteps;
         uint64_t numPhotonsInLastStep;
@@ -130,8 +128,7 @@ private:
     class MakeSteps_visitor : public boost::static_visitor<std::pair<I3CLSimStepSeriesConstPtr, bool> >
     {
     public:
-        MakeSteps_visitor(uint64_t &rngState, uint32_t rngA,
-                          uint64_t maxNumStepsPerStepSeries,
+        MakeSteps_visitor(uint64_t maxNumStepsPerStepSeries,
                           GenerateStepPreCalculator &preCalc);
         template <typename T>
         std::pair<I3CLSimStepSeriesConstPtr, bool> operator()(T &data) const;
@@ -147,18 +144,10 @@ private:
                       uint64_t photonsPerStep,
                       double particleDir_x, double particleDir_y, double particleDir_z
                      ) const;
-        
-        uint64_t &rngState_;
-        uint32_t rngA_;
-        //I3RandomService &randomService_;
         uint64_t maxNumStepsPerStepSeries_;
         GenerateStepPreCalculator &preCalc_;
     };
     //////////////////
-    
-    I3RandomServicePtr randomService_;
-    uint64_t rngState_;
-    uint32_t rngA_;
     
     bool initialized_;
     bool barrier_is_enqueued_;
@@ -185,56 +174,34 @@ private:
     class GenerateStepPreCalculator
     {
     public:
-        GenerateStepPreCalculator(I3RandomServicePtr randomService,
-                                  double angularDist_a=0.39,
-                                  double angularDist_b=2.61,
-                                  std::size_t numberOfValues=102400);
-        ~GenerateStepPreCalculator();
-        
-        inline void GetAngularCosSinValue(double &angular_cos, double &angular_sin, double &random_value)
+        GenerateStepPreCalculator(double angularDist_a=0.39,
+                                  double angularDist_b=2.61);
+
+        inline void GetAngularCosSinValue(I3RandomService &randomService, double &angular_cos, double &angular_sin, double &random_value)
         {
-            if (index_ >= numberOfValues_) RegenerateValues();
-            
-            const std::pair<std::pair<double, double>, double> &currentPair = (*currentVector_)[index_];
-            
-            angular_sin = currentPair.first.first;
-            angular_cos = currentPair.first.second;
-            random_value = currentPair.second;
-            
-            ++index_;
+            angular_cos=std::max(1.-std::pow(-std::log(1.-randomService.Uniform()*angularDist_I_)/angularDist_b_, one_over_angularDist_a_), -1.);
+            angular_sin=std::sqrt(1.-angular_cos*angular_cos);
+            random_value=randomService.Uniform();
         }
         
     private:
         double one_over_angularDist_a_;
         double angularDist_b_;
         double angularDist_I_;
-        
-        std::size_t numberOfValues_;
-        std::size_t index_;
-
-        typedef std::vector<std::pair<std::pair<double, double>, double> > queueVector_t;
-        boost::shared_ptr<queueVector_t> currentVector_;
-        
-        I3CLSimQueue<boost::shared_ptr<queueVector_t> > queueFromFeederThreads_;
-        std::vector<boost::shared_ptr<boost::thread> > feederThreads_;
-        
-        void FeederThread(unsigned int threadId, uint64_t initialRngState, uint32_t rngA);
-        void RegenerateValues();
     };
 
     
     static void GenerateStep(I3CLSimStep &newStep,
                              const I3Particle &p,
                              double particleDir_x, double particleDir_y, double particleDir_z,
-                             uint32_t identifier,
                              uint32_t photonsPerStep,
                              const double &longitudinalPos,
+                             I3RandomService &randomService,
                              GenerateStepPreCalculator &preCalc);
 
     static void GenerateStepForMuon(I3CLSimStep &newStep,
                                     const I3Particle &p,
                                     double particleDir_x, double particleDir_y, double particleDir_z,
-                                    uint32_t identifier,
                                     uint32_t photonsPerStep,
                                     double length);
 

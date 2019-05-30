@@ -112,9 +112,6 @@ void I3CLSimLightSourceToStepConverterAsync::Initialize()
     if (initialized_)
         throw I3CLSimLightSourceToStepConverter_exception("I3CLSimLightSourceToStepConverterAsync already initialized!");
 
-    if (!randomService_)
-        throw I3CLSimLightSourceToStepConverter_exception("RandomService not set!");
-
     if (!wlenBias_)
         throw I3CLSimLightSourceToStepConverter_exception("WlenBias not set!");
 
@@ -140,7 +137,6 @@ void I3CLSimLightSourceToStepConverterAsync::Initialize()
         
         parameterization.converter->SetMediumProperties(mediumProperties_);
         parameterization.converter->SetWlenBias(wlenBias_);
-        parameterization.converter->SetRandomService(randomService_);
         parameterization.converter->SetBunchSizeGranularity(1); // we do not send the bunches directly, the steps are integrated in the step store first, so granularity does not matter
         parameterization.converter->SetMaxBunchSize(maxBunchSize_); // use the same bunch size for the parameterizations
     }
@@ -161,7 +157,6 @@ void I3CLSimLightSourceToStepConverterAsync::Initialize()
         if (!propagator) log_fatal("Internal error: NULL propagator");
         propagator->SetMediumProperties(mediumProperties_);
         propagator->SetWlenBias(wlenBias_);
-        propagator->SetRandomService(randomService_);
     }
     for (auto &propagator : propagators_) {
         if (!propagator->IsInitialized())
@@ -286,13 +281,13 @@ void I3CLSimLightSourceToStepConverterAsync::WorkerThread_impl(boost::this_threa
     };
     
     // Call a parameterization to get steps
-    auto getStepsFromParameterization = [&](I3CLSimLightSourceParameterization &parameterization, I3CLSimLightSourceConstPtr &lightSource, uint32_t lightSourceIdentifier) {
+    auto getStepsFromParameterization = [&](I3CLSimLightSourceParameterization &parameterization, I3CLSimLightSourceConstPtr &lightSource, I3CLSimStepFactoryPtr stepFactory) {
         // call the converter
         if (!parameterization.converter) log_fatal("Internal error: parameteriation has NULL converter");
         if (!parameterization.converter->IsInitialized()) log_fatal("Internal error: parameterization converter is not initialized.");
         if (parameterization.converter->BarrierActive()) log_fatal("Logic error: parameterization converter has active barrier.");
                 
-        parameterization.converter->EnqueueLightSource(*lightSource, lightSourceIdentifier);
+        parameterization.converter->EnqueueLightSource(*lightSource, stepFactory);
         parameterization.converter->EnqueueBarrier();
         
         // get steps from the parameterization until the barrier is reached
@@ -329,13 +324,13 @@ void I3CLSimLightSourceToStepConverterAsync::WorkerThread_impl(boost::this_threa
     };
     
     // Push a particle into the step generation stack
-    std::function<bool(I3CLSimLightSourceConstPtr &, uint32_t, I3CLSimLightSourcePropagatorPtr)> addLightSource =
-        [&](I3CLSimLightSourceConstPtr &lightSource, uint32_t lightSourceIdentifier, I3CLSimLightSourcePropagatorPtr source) ->bool
+    std::function<bool(I3CLSimLightSourceConstPtr &, I3CLSimStepFactoryPtr, I3CLSimLightSourcePropagatorPtr)> addLightSource =
+        [&](I3CLSimLightSourceConstPtr &lightSource, I3CLSimStepFactoryPtr stepFactory, I3CLSimLightSourcePropagatorPtr source) ->bool
     {
         for (auto &parameterization : parameterizations) {
             if (parameterization.IsValidForLightSource(*lightSource))
             {
-                getStepsFromParameterization(parameterization, lightSource, lightSourceIdentifier);
+                getStepsFromParameterization(parameterization, lightSource, stepFactory);
                 return true;
             }
         }
@@ -347,9 +342,9 @@ void I3CLSimLightSourceToStepConverterAsync::WorkerThread_impl(boost::this_threa
                 namespace ph = std::placeholders;
                 I3CLSimLightSourcePropagator::secondary_callback emitSecondary =
                     std::bind<bool>(addLightSource, ph::_1, ph::_2, propagator);
-                I3MCTreePtr daughters = propagator->Convert(lightSource, lightSourceIdentifier, emitSecondary, emitStep);
+                I3MCTreePtr daughters = propagator->Convert(lightSource, stepFactory, emitSecondary, emitStep);
                 if (daughters) {
-                    particleHistories[lightSourceIdentifier] = daughters;
+                    particleHistories[stepFactory->GetLightSourceID()] = daughters;
                 }
                 return true;
             }
@@ -362,12 +357,12 @@ void I3CLSimLightSourceToStepConverterAsync::WorkerThread_impl(boost::this_threa
     for (;;)
     {
         I3CLSimLightSourceConstPtr lightSource;
-        uint32_t lightSourceIdentifier;
+        I3CLSimStepFactoryPtr stepFactory;
 
         {
             boost::this_thread::restore_interruption ri(di);
             try {
-                std::tie(lightSourceIdentifier, lightSource) = queueToGeant4_->Get();
+                std::tie(stepFactory, lightSource) = queueToGeant4_->Get();
             }
             catch(boost::thread_interrupted &i)
             {
@@ -402,7 +397,7 @@ void I3CLSimLightSourceToStepConverterAsync::WorkerThread_impl(boost::this_threa
         }
         
         try {
-            if (!addLightSource(lightSource, lightSourceIdentifier, NULL))
+            if (!addLightSource(lightSource, stepFactory, NULL))
                 log_fatal_stream("No propagator or parameterization can handle this "<<lightSource->GetParticle().GetTypeString());
         } catch (boost::thread_interrupted &i) {
             log_debug("Thread was interrupted. closing.");
@@ -410,7 +405,7 @@ void I3CLSimLightSourceToStepConverterAsync::WorkerThread_impl(boost::this_threa
         }
         
         // Light source is eligible for finalization after the next bunch
-        markers.push_back(lightSourceIdentifier);
+        markers.push_back(stepFactory->GetLightSourceID());
         
     }
 
@@ -442,13 +437,6 @@ void I3CLSimLightSourceToStepConverterAsync::SetMaxBunchSize(uint64_t num)
     initialized_=false;
 }
 
-void I3CLSimLightSourceToStepConverterAsync::SetRandomService(I3RandomServicePtr random)
-{
-    StopThread();
-    randomService_=random;
-    initialized_=false;
-}
-
 void I3CLSimLightSourceToStepConverterAsync::SetWlenBias(I3CLSimFunctionConstPtr wlenBias)
 {
     StopThread();
@@ -470,7 +458,7 @@ void I3CLSimLightSourceToStepConverterAsync::SetPropagators(const std::vector<I3
     initialized_=false;
 }
 
-void I3CLSimLightSourceToStepConverterAsync::EnqueueLightSource(const I3CLSimLightSource &lightSource, uint32_t identifier)
+void I3CLSimLightSourceToStepConverterAsync::EnqueueLightSource(const I3CLSimLightSource &lightSource, I3CLSimStepFactoryPtr stepFactory)
 {
     if (!initialized_)
         throw I3CLSimLightSourceToStepConverter_exception("I3CLSimLightSourceToStepConverterAsync is not initialized!");
@@ -482,7 +470,7 @@ void I3CLSimLightSourceToStepConverterAsync::EnqueueLightSource(const I3CLSimLig
     }
     
     I3CLSimLightSourceConstPtr lightSourceCopy(new I3CLSimLightSource(lightSource));
-    queueToGeant4_->Put(std::make_pair(identifier, lightSourceCopy));
+    queueToGeant4_->Put(std::make_pair(stepFactory, lightSourceCopy));
 }
 
 void I3CLSimLightSourceToStepConverterAsync::EnqueueBarrier()
@@ -498,7 +486,7 @@ void I3CLSimLightSourceToStepConverterAsync::EnqueueBarrier()
         barrier_is_enqueued_=true;
 
         // we use a NULL pointer as the barrier
-        queueToGeant4_->Put(std::make_pair(0, I3CLSimLightSourceConstPtr()));
+        queueToGeant4_->Put(std::make_pair(I3CLSimStepFactoryPtr(), I3CLSimLightSourceConstPtr()));
     }
 }
 

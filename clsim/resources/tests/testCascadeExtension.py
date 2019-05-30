@@ -18,14 +18,14 @@ source = clsim.I3CLSimLightSource(p)
 converter = clsim.I3CLSimLightSourceToStepConverterPPC()
 converter.SetWlenBias(clsim.GetIceCubeDOMAcceptance())
 converter.SetMediumProperties(clsim.MakeIceCubeMediumProperties())
-converter.SetRandomService(phys_services.I3GSLRandomService(0))
 converter.Initialize()
 
-converter.EnqueueLightSource(source, 1)
+factory = clsim.I3CLSimStepFactory(37, 0, 0)
+converter.EnqueueLightSource(source, factory)
 steps = converter.GetConversionResult()
 assert all( [s.pos.z > 0 for s in steps] ), "Steps are spread along the cascade by default"
 
 converter.SetUseCascadeExtension(False)
-converter.EnqueueLightSource(source, 2)
+converter.EnqueueLightSource(source, factory)
 steps = converter.GetConversionResult()
 assert all( [s.pos.z == 0 for s in steps] ), "Steps are all at the origin"

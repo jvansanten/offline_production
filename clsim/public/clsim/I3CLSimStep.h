@@ -63,11 +63,11 @@
  * typically produced by a full particle tracker
  * like Geant4.
  */
-static const unsigned i3clsimstep_version_ = 0;
+static const unsigned i3clsimstep_version_ = 1;
 
 struct I3CLSimStep 
 {
-    
+    friend class I3CLSimStepFactory;
 public:
     
     I3CLSimStep() {;}
@@ -92,6 +92,8 @@ public:
     inline uint8_t GetSourceType() const {return sourceType;}
     inline uint8_t GetDummy1() const {return dummy1;}
     inline uint16_t GetDummy2() const {return dummy2;}
+    inline std::array<uint32_t,2> GetRNGKey() const {return rngKey;}
+    inline std::array<uint32_t,4> GetRNGCounter() const {return rngCounter;}
 
     inline I3PositionPtr GetPos() const {return I3PositionPtr(new I3Position(((const cl_float *)&posAndTime)[0], ((const cl_float *)&posAndTime)[1], ((const cl_float *)&posAndTime)[2]));}
 
@@ -118,7 +120,7 @@ public:
     inline void SetSourceType(const uint8_t &val) {sourceType=val;}
     inline void SetDummy1(const uint8_t &val) {dummy1=val;}
     inline void SetDummy2(const uint16_t &val) {dummy2=val;}
-    
+
     inline void SetPos(const I3Position &pos) {((cl_float *)&posAndTime)[0]=pos.GetX(); ((cl_float *)&posAndTime)[1]=pos.GetY(); ((cl_float *)&posAndTime)[2]=pos.GetZ();}
 
     inline void SetDir(const I3Direction &dir) 
@@ -148,6 +150,8 @@ public:
     cl_uchar sourceType;
     cl_uchar dummy1;
     cl_ushort dummy2;
+    std::array<cl_uint,2> rngKey;
+    std::array<cl_uint,4> rngCounter;
 
 private:
     friend class icecube::serialization::access;

@@ -118,9 +118,6 @@ void I3CLSimLightSourceToStepConverterFlasher::Initialize()
     if (initialized_)
         throw I3CLSimLightSourceToStepConverter_exception("I3CLSimLightSourceToStepConverterFlasher already initialized!");
 
-    if (!randomService_)
-        throw I3CLSimLightSourceToStepConverter_exception("RandomService not set!");
-
     if (!wlenBias_)
         throw I3CLSimLightSourceToStepConverter_exception("WlenBias not set!");
 
@@ -191,19 +188,13 @@ void I3CLSimLightSourceToStepConverterFlasher::SetWlenBias(I3CLSimFunctionConstP
     initialized_=false;
 }
 
-void I3CLSimLightSourceToStepConverterFlasher::SetRandomService(I3RandomServicePtr random)
-{
-    randomService_=random;
-    initialized_=false;
-}
-
 void I3CLSimLightSourceToStepConverterFlasher::SetMediumProperties(I3CLSimMediumPropertiesConstPtr mediumProperties)
 {
     mediumProperties_=mediumProperties;
     initialized_=false;
 }
 
-void I3CLSimLightSourceToStepConverterFlasher::EnqueueLightSource(const I3CLSimLightSource &lightSource, uint32_t identifier)
+void I3CLSimLightSourceToStepConverterFlasher::EnqueueLightSource(const I3CLSimLightSource &lightSource, I3CLSimStepFactoryPtr stepFactory)
 {
     if (!initialized_)
         throw I3CLSimLightSourceToStepConverter_exception("I3CLSimLightSourceToStepConverterFlasher is not initialized!");
@@ -215,6 +206,7 @@ void I3CLSimLightSourceToStepConverterFlasher::EnqueueLightSource(const I3CLSimL
         throw I3CLSimLightSourceToStepConverter_exception("The I3CLSimLightSourceToStepConverterFlasher parameterization only works on flashers.");
     
     const I3CLSimFlasherPulse &flasherPulse = lightSource.GetFlasherPulse();
+    I3RandomServicePtr randomService = stepFactory->GetRandomStream();
 
     // just skip the entry if there are no photons to generate
     if (flasherPulse.GetNumberOfPhotonsNoBias() <= 0.) return;
@@ -229,7 +221,7 @@ void I3CLSimLightSourceToStepConverterFlasher::EnqueueLightSource(const I3CLSimL
         log_debug("HUGE EVENT: (e-m) numPhotonsWithBias=%f (approximating possion by gaussian)", numPhotonsWithBias);
         double numPhotonsDouble=0;
         do {
-            numPhotonsDouble = randomService_->Gaus(numPhotonsWithBias, std::sqrt(numPhotonsWithBias));
+            numPhotonsDouble = randomService->Gaus(numPhotonsWithBias, std::sqrt(numPhotonsWithBias));
         } while (numPhotonsDouble<0.);
         
         if (numPhotonsDouble > static_cast<double>(std::numeric_limits<uint64_t>::max()))
@@ -238,7 +230,7 @@ void I3CLSimLightSourceToStepConverterFlasher::EnqueueLightSource(const I3CLSimL
     }
     else
     {
-        numPhotons = static_cast<uint64_t>(randomService_->Poisson(numPhotonsWithBias));
+        numPhotons = static_cast<uint64_t>(randomService->Poisson(numPhotonsWithBias));
     }
     if (numPhotons==0) return;
     
@@ -251,7 +243,7 @@ void I3CLSimLightSourceToStepConverterFlasher::EnqueueLightSource(const I3CLSimL
     LightSourceData_t newEntry;
     newEntry.isBarrier = false;
     newEntry.flasherPulse = flasherPulse;
-    newEntry.identifier = identifier;
+    newEntry.stepFactory = stepFactory;
     newEntry.numPhotonsWithBias = numPhotons;
     inputQueue_.push_back(newEntry);
 }
@@ -384,25 +376,24 @@ I3CLSimStepSeriesConstPtr I3CLSimLightSourceToStepConverterFlasher::MakeSteps(bo
     }
     
     // now make the steps
+    I3RandomServicePtr randomService = currentElement.stepFactory->GetRandomStream();
     for (uint64_t i=0;i<numSteps;++i)
     {
         const uint32_t numberOfPhotonsForThisStep = (i==numSteps-1)?numPhotonsInLastStep:photonsPerStep_;
         if (numberOfPhotonsForThisStep==0) {++numAppendedDummySteps; continue;}
         
-        outputSteps->push_back(I3CLSimStep());
-        I3CLSimStep &newStep = outputSteps->back();
-
-        FillStep(newStep,
+        outputSteps->emplace_back(currentElement.stepFactory->createStep());
+        FillStep(outputSteps->back(),
+                 randomService,
                  numberOfPhotonsForThisStep,
-                 currentElement.flasherPulse,
-                 currentElement.identifier
+                 currentElement.flasherPulse
                 );
     }
 
     // and the dummy steps
     for (uint64_t i=0;i<numAppendedDummySteps;++i)
     {
-        outputSteps->push_back(I3CLSimStep());
+        outputSteps->push_back(currentElement.stepFactory->createStep());
         I3CLSimStep &newStep = outputSteps->back();
 
         newStep.SetPosX(0.); newStep.SetPosY(0.); newStep.SetPosZ(0.);
@@ -413,7 +404,6 @@ I3CLSimStepSeriesConstPtr I3CLSimLightSourceToStepConverterFlasher::MakeSteps(bo
         newStep.SetNumPhotons(0);
         newStep.SetWeight(0);
         newStep.SetSourceType(0);
-        newStep.SetID(currentElement.identifier);
     }
     
     if (entryCanBeRemoved) inputQueue_.pop_front();
@@ -423,9 +413,10 @@ I3CLSimStepSeriesConstPtr I3CLSimLightSourceToStepConverterFlasher::MakeSteps(bo
 
 
 void I3CLSimLightSourceToStepConverterFlasher::FillStep(I3CLSimStep &step,
+                                                        I3RandomServicePtr &randomService,
                                                         uint32_t numberOfPhotons,
-                                                        const I3CLSimFlasherPulse &flasherPulse,
-                                                        uint32_t identifier)
+                                                        const I3CLSimFlasherPulse &flasherPulse
+                                                        )
 {
     //////// bunch direction
 
@@ -433,13 +424,13 @@ void I3CLSimLightSourceToStepConverterFlasher::FillStep(I3CLSimStep &step,
 
     const double smearPolar =
     angularProfileDistributionPolar_->SampleFromDistribution
-    (randomService_,
+    (randomService,
      std::vector<double>(1, flasherPulse.GetAngularEmissionSigmaPolar())
      );
     
     const double smearAzimuthal =
     angularProfileDistributionAzimuthal_->SampleFromDistribution
-    (randomService_,
+    (randomService,
      std::vector<double>(1, flasherPulse.GetAngularEmissionSigmaAzimuthal())
      );
 
@@ -513,7 +504,7 @@ void I3CLSimLightSourceToStepConverterFlasher::FillStep(I3CLSimStep &step,
     //////// bunch time delay
     const double timeDelay =
     timeDelayDistribution_->SampleFromDistribution
-    (randomService_,
+    (randomService,
      std::vector<double>(1, flasherPulse.GetPulseWidth())
      );
     
@@ -528,7 +519,6 @@ void I3CLSimLightSourceToStepConverterFlasher::FillStep(I3CLSimStep &step,
     step.SetBeta(1.);
     step.SetNumPhotons(numberOfPhotons);
     step.SetWeight(1.);
-    step.SetID(identifier);
     step.SetSourceType(spectrumSourceTypeIndex_);
 }
 

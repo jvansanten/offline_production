@@ -34,6 +34,17 @@ using namespace icecube::archive;
 
 namespace {
     const std::size_t blobSizeV0 = 48; // size of our structure in bytes
+    const std::size_t blobSizeV1 = 72; // size of our structure in bytes
+    struct I3CLSimStepV0 {
+        cl_float4 posAndTime;   // x,y,z,time
+        cl_float4 dirAndLengthAndBeta; // theta,phi,length,beta
+        cl_uint numPhotons;
+        cl_float weight;
+        cl_uint identifier;
+        cl_uchar sourceType;
+        cl_uchar dummy1;
+        cl_ushort dummy2;
+    };
 }
 
 I3CLSimStep::~I3CLSimStep() { }
@@ -54,14 +65,16 @@ void I3CLSimStep::save(Archive &ar, unsigned version) const
     ar << make_nvp("phi", ((const cl_float *)&dirAndLengthAndBeta)[1]);
     ar << make_nvp("length", ((const cl_float *)&dirAndLengthAndBeta)[2]);
     ar << make_nvp("beta", ((const cl_float *)&dirAndLengthAndBeta)[3]);
-    
+
     ar << make_nvp("num", numPhotons);
     ar << make_nvp("weight", weight);
     ar << make_nvp("id", identifier);
-
     ar << make_nvp("sourceType", sourceType);
     ar << make_nvp("dummy1", dummy1);
     ar << make_nvp("dummy2", dummy2);
+
+    ar << make_nvp("rngKey", rngKey);
+    ar << make_nvp("rngCounter", rngCounter);
 }     
 
 template <class Archive>
@@ -70,7 +83,7 @@ void I3CLSimStep::load(Archive &ar, unsigned version)
     if (version > i3clsimstep_version_)
         log_fatal("Attempting to read version %u from file but running version %u of I3CLSimStep class.",version,i3clsimstep_version_);
 
-    float temp; uint32_t temp_uint;
+    float temp; uint32_t temp_uint; uint64_t temp_ulong;
     uint16_t temp_uint16; uint8_t temp_uint8;
     ar >> make_nvp("x", temp); ((cl_float *)&posAndTime)[0]=temp;
     ar >> make_nvp("y", temp); ((cl_float *)&posAndTime)[1]=temp;
@@ -81,13 +94,25 @@ void I3CLSimStep::load(Archive &ar, unsigned version)
     ar >> make_nvp("phi", temp); ((cl_float *)&dirAndLengthAndBeta)[1]=temp;
     ar >> make_nvp("length", temp); ((cl_float *)&dirAndLengthAndBeta)[2]=temp;
     ar >> make_nvp("beta", temp); ((cl_float *)&dirAndLengthAndBeta)[3]=temp;
-
     ar >> make_nvp("num", temp_uint); numPhotons=temp_uint;
     ar >> make_nvp("weight", temp); weight=temp;
     ar >> make_nvp("id", temp_uint); identifier=temp_uint;
     ar >> make_nvp("sourceType", temp_uint8); sourceType=temp_uint8;
     ar >> make_nvp("dummy1", temp_uint8); dummy1=temp_uint8;
     ar >> make_nvp("dummy2", temp_uint16); dummy2=temp_uint16;
+    if (version > 0) {
+        // g++ refuses to take non-const references to packed members
+        {
+            auto temp = rngKey;
+            ar >> make_nvp("rngKey", temp);
+            rngKey = temp;
+        }
+        {
+            auto temp = rngCounter;
+            ar >> make_nvp("rngCounter", temp);
+            rngCounter = temp;
+        }
+    }
 
 }
 #ifdef __clang__
@@ -100,9 +125,9 @@ template <>
 void I3CLSimStep::save(portable_binary_oarchive &ar, unsigned version) const
 {
     // check an assumption we will make throughout the code
-    BOOST_STATIC_ASSERT((sizeof(I3CLSimStep) == blobSizeV0));
+    BOOST_STATIC_ASSERT((sizeof(I3CLSimStep) == blobSizeV1));
 
-    ar << make_nvp("blob", icecube::serialization::make_binary_object((void *)this, blobSizeV0));
+    ar << make_nvp("blob", icecube::serialization::make_binary_object((void *)this, blobSizeV1));
 }
 
 template <>
@@ -112,9 +137,25 @@ void I3CLSimStep::load(portable_binary_iarchive &ar, unsigned version)
         log_fatal("Attempting to read version %u from file but running version %u of I3CLSimStep class.",version,i3clsimstep_version_);
 
     // check an assumption we will make throughout the code
-    BOOST_STATIC_ASSERT((sizeof(I3CLSimStep) == blobSizeV0));
+    BOOST_STATIC_ASSERT((sizeof(I3CLSimStepV0) == blobSizeV0));
+    BOOST_STATIC_ASSERT((sizeof(I3CLSimStep) == blobSizeV1));
 
-    ar >> make_nvp("blob", icecube::serialization::make_binary_object(this, blobSizeV0));
+    if (version == 0) {
+        I3CLSimStepV0 temp;
+        ar >> make_nvp("blob", icecube::serialization::make_binary_object(&temp, blobSizeV0));
+        this->rngKey = {{0,0}};
+        this->rngCounter = {{0,0,0,0}};
+        this->posAndTime = temp.posAndTime;
+        this->dirAndLengthAndBeta = temp.dirAndLengthAndBeta;
+        this->numPhotons = temp.numPhotons;
+        this->weight = temp.weight;
+        this->identifier = temp.identifier;
+        this->sourceType = temp.sourceType;
+        this->dummy1 = temp.dummy1;
+        this->dummy2 = temp.dummy2;
+    } else {
+        ar >> make_nvp("blob", icecube::serialization::make_binary_object(this, blobSizeV1));
+    }
 }
 
 template<>
@@ -132,7 +173,24 @@ void I3Vector<I3CLSimStep>::serialize(portable_binary_iarchive &ar, unsigned ver
     this->resize(size);
 
     // read the binary blob in one go..
-    ar >> make_nvp("blob", icecube::serialization::make_binary_object( &((*this)[0]), blobSizeV0*size));
+    if (I3CLSimStep_version == 0) {
+        std::vector<I3CLSimStepV0> temp(size);
+        ar >> make_nvp("blob", icecube::serialization::make_binary_object( temp.data(), blobSizeV0*size));
+        for (size_t i = 0; i < size; i++) {
+            (*this)[i].rngKey = {{0,0}};
+            (*this)[i].rngCounter = {{0,0,0,0}};
+            (*this)[i].posAndTime = temp[i].posAndTime;
+            (*this)[i].dirAndLengthAndBeta = temp[i].dirAndLengthAndBeta;
+            (*this)[i].numPhotons = temp[i].numPhotons;
+            (*this)[i].weight = temp[i].weight;
+            (*this)[i].identifier = temp[i].identifier;
+            (*this)[i].sourceType = temp[i].sourceType;
+            (*this)[i].dummy1 = temp[i].dummy1;
+            (*this)[i].dummy2 = temp[i].dummy2;
+        }
+    } else {
+        ar >> make_nvp("blob", icecube::serialization::make_binary_object( &((*this)[0]), blobSizeV1*size));
+    }
 }
 
 template<>
@@ -143,7 +201,7 @@ void I3Vector<I3CLSimStep>::serialize(portable_binary_oarchive &ar, unsigned ver
     ar << make_nvp("I3CLSimStep_version", i3clsimstep_version_);
     uint64_t size = this->size();
     ar << make_nvp("num", size);
-    ar << make_nvp("blob", icecube::serialization::make_binary_object( &((*this)[0]), blobSizeV0*size ));
+    ar << make_nvp("blob", icecube::serialization::make_binary_object( &((*this)[0]), blobSizeV1*size ));
 }
 
 

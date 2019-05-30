@@ -26,92 +26,85 @@
 
 from __future__ import print_function
 
-# ZMQ is not functional yet
-#try:
-#    import zmq
-#    has_zmq = True
-#except ImportError:
-#    has_zmq = False
+try:
+   import zmq
+   has_zmq = True
+except ImportError:
+   has_zmq = False
 has_zmq = False
 
 import multiprocessing
+import tempfile
 import signal
 import sys
 import time
 
-from icecube import icetray, dataclasses
+from icecube import icetray, dataclasses, dataio
 from I3Tray import *
 
 
 # run a writer tray, getting frames from a queue (this runs as a subprocess)
-def RunAsyncTray(queue,segment,segmentArgs,childIsReady,debug):
-    if has_zmq:
-        zmq_context = zmq.Context()
-    else:
-        zmq_context = None
+def RunAsyncTray(source,sink,prefix,streams,segment,segmentArgs,identifier,debug):
     
     # just pushes frame on a queue
     class AsyncReceiver(icetray.I3Module):
         def __init__(self, context):
             icetray.I3Module.__init__(self, context)
             self.AddParameter("Debug", "Output some status information for debugging", False)
-            self.AddParameter("Queue", "", None)
-            self.AddParameter("ZMQContext", "", None)
-            self.AddParameter("ChildIsReady", "", None)
+            self.AddParameter("Source", "", None)
+            self.AddParameter("Prefix", "", None)
+            self.AddParameter("Identifier", "", None)
             self.AddOutBox("OutBox")
             self.nframes = 0
         def Configure(self):
-            self.debug = self.GetParameter("Debug")
-            self.queue = self.GetParameter("Queue")
-            self.zmq_context = self.GetParameter("ZMQContext")
-            self.childIsReady = self.GetParameter("ChildIsReady")
+            self.source = self.GetParameter("Source")
             
-            if has_zmq:
-                socketString = self.queue
-                if self.debug:
-                    print("setting up zmq to receive on", socketString)
-                    sys.stdout.flush()
-                self.queue = self.zmq_context.socket(zmq.PULL)
-                if self.debug:
-                    print("waiting for zmq socket connection")
-                    sys.stdout.flush()
-                self.queue.connect(socketString)
-                if self.debug:
-                    print("zmq ready")
-                    sys.stdout.flush()
-            
-            # signal eneryone that we are ready to receive data
-            if self.debug:
-                print("setting child process state to 1 (ready)")
-                sys.stdout.flush()
-            self.childIsReady.value = 1
-            if self.debug:
-                print("child process is ready to receive data.")
-                sys.stdout.flush()
-            
+            self.prefix = self.GetParameter("Prefix")
+            self.identifier = self.GetParameter("Identifier")
+            if not isinstance(self.identifier, int):
+                raise TypeError("Identifier must be an integer")
+
         def Process(self):
-            #print "waiting for frame..", self.nframes
-            #sys.stdout.flush()
-            if has_zmq:
-                frame = self.queue.recv_pyobj()
-            else:
-                frame = self.queue.get()
-            #if frame is not None:
-            #    #print "frame received", self.nframes , frame.Stop
-            #    #sys.stdout.flush()
-        
+            if self.prefix is not None:
+                for frame in dataio.I3File(self.prefix):
+                    self.PushFrame(frame)
+                self.prefix = None
+            
+            # request work
+            self.source.send_pyobj(self.identifier)
+            frame = self.source.recv_pyobj()
             if frame is None:
-                if self.debug: 
-                    print("requesting suspension")
-                    sys.stdout.flush()
+                icetray.logging.log_debug("({}) got sentinel, requesting suspension".format(self.identifier), unit="clsim.AsyncTap")
                 self.RequestSuspension()
+                return
             else:
                 self.nframes += 1
                 self.PushFrame(frame)
+
         def Finish(self):
-            if self.debug:
-                print("received", self.nframes, "frames")
-                sys.stdout.flush()
+            icetray.logging.log_debug("received {} frames".format(self.nframes), unit="clsim.AsyncTap")
+    
+    class AsyncSender(icetray.I3Module):
+        def __init__(self, context):
+            icetray.I3Module.__init__(self, context)
+            self.AddParameter("Sink", "", None)
+            self.AddParameter("Streams", "", [icetray.I3Frame.DAQ])
+            self.AddOutBox("OutBox")
+            self.nframes = 0
+        def Configure(self):
+            self.sink = self.GetParameter("Sink")
+            self.streams = self.GetParameter("Streams")
+
+        def Process(self):
+            
+            frame = self.PopFrame()
+            if frame is not None and frame.Stop in self.streams:
+                self.sink.send_pyobj(frame)
+                self.nframes += 1
+                self.PushFrame(frame)
+        
+        def Finish(self):
+            icetray.logging.log_debug("sent {} frames".format(self.nframes), unit="clsim.AsyncTap")
     
     class RerouteSigIntToDefault(icetray.I3Module):
         def __init__(self, context):
@@ -124,45 +117,54 @@ def RunAsyncTray(queue,segment,segmentArgs,childIsReady,debug):
             signal.signal(signal.SIGINT, signal.SIG_IGN)
         def DAQ(self, frame):
             self.PushFrame(frame)
-    
-    writeTray = I3Tray()
-    writeTray.AddModule(AsyncReceiver, "theAsyncReceiver",
-        Queue=queue, ZMQContext=zmq_context, Debug=debug, ChildIsReady=childIsReady)
-    writeTray.AddModule(RerouteSigIntToDefault, "rerouteSigIntToDefault")
-    
-    if hasattr(segment, '__i3traysegment__'):
-        writeTray.AddSegment(segment,"theSegment", **segmentArgs)
-    else:
-        writeTray.AddModule(segment,"theModule", **segmentArgs)
-    
-    
 
-    if debug:
-        print("worker starting..")
-        sys.stdout.flush()
-    writeTray.Execute()
-    writeTray.Finish()
-    if debug:
-        print("worker finished.")
-        sys.stdout.flush()
+    zmq_context = zmq.Context()
+    icetray.logging.log_debug("setting up zmq to receive on {}".format(source), unit="clsim.AsyncTap")
+    icetray.logging.log_debug("setting up zmq to push on {}".format(sink), unit="clsim.AsyncTap")
 
+    source_socket = zmq_context.socket(zmq.REQ)
+    sink_socket = zmq_context.socket(zmq.PUSH)
+    sink_socket.setsockopt(zmq.SNDHWM, 1)
+    source_socket.connect(source)
+    sink_socket.connect(sink)
 
+    try:
+        writeTray = I3Tray()
+        writeTray.AddModule(AsyncReceiver, "theAsyncReceiver",
+            Source=source_socket,
+            Prefix=prefix,Debug=debug, Identifier=identifier)
+        writeTray.AddModule(RerouteSigIntToDefault, "rerouteSigIntToDefault")
+    
+        if hasattr(segment, '__i3traysegment__'):
+            writeTray.AddSegment(segment,"theSegment", **segmentArgs)
+        else:
+            writeTray.AddModule(segment,"theModule", **segmentArgs)
+    
+        writeTray.AddModule(AsyncSender, "theAsyncReturner",
+            Sink=sink_socket, Streams=streams)
+
+        icetray.logging.log_info("worker starting..", unit="clsim")
+        writeTray.Execute()
+        writeTray.Finish()
+    finally:
+        sink_socket.send_pyobj(identifier)
+    icetray.logging.log_debug("({}) finished".format(identifier), unit="clsim.AsyncTap")
 
 class AsyncTap(icetray.I3ConditionalModule):
     """
-    Starts a module or a segment on its own tray in its own process
-    and pipes frames from the current tray to the child tray.
-    Can be used for things like asynchronous file writing.
-    The frames will never get back to the master module,
-    so this is effecively a "fork".
+    Starts N copies of a module or a segment on its own tray in its own process
+    and load balances frames from the current tray to the children. Since the
+    load balancing destroys the order of the frames anyway, no effort is made
+    to preserve the original order when they return to parent tray.
     """
 
     def __init__(self, context):
         icetray.I3ConditionalModule.__init__(self, context)
-        self.AddParameter("Debug", "Output some status information for debugging", False)
-        self.AddParameter("BufferSize", "How many frames should be buffered", 2000)
         self.AddParameter("Segment", "The tray segment to run asynchronously", None)
         self.AddParameter("Args", "A dictionary with keyword arguments for the asynchronous segment.", dict())
+        self.AddParameter("NWorkers", "Number of subprocesses to start", 1)
+        self.AddParameter("Streams", "Streams to distribute to workers", [icetray.I3Frame.DAQ])
+        self.AddParameter("Prefix", "File with frames to prepend to each worker's stream", None)
         self.AddOutBox("OutBox")
         self.nframes = 0
         self.suspensionRequested=False
@@ -171,8 +173,8 @@ class AsyncTap(icetray.I3ConditionalModule):
         if self.suspensionRequested: return False
         
         # check to see if child process is still alive
-        if not self.process.is_alive():
-            print("ERROR: ****** child tray died unexpectedly. Terminating master tray. ******")
+        if not all((proc.is_alive for proc in self.processes)):
+            icetray.logging.log_error("child tray died unexpectedly. Terminating master tray.", unit="clsim.AsyncTap")
             self.RequestSuspension()
             self.suspensionRequested=True
             return False
@@ -180,90 +182,83 @@ class AsyncTap(icetray.I3ConditionalModule):
             return True
 
     def Configure(self):
-        self.debug = self.GetParameter("Debug")
-        self.buffersize = self.GetParameter("BufferSize")
         self.segment = self.GetParameter("Segment")
         self.args = self.GetParameter("Args")
+        nworkers = self.GetParameter("NWorkers")
+        assert nworkers > 0
 
-        if self.debug:
-            print("starting child process..")
-            sys.stdout.flush()
-        self.childIsReady = multiprocessing.Value('i', 0)
+        icetray.logging.log_debug("starting child process..", unit="clsim.AsyncTap")
         
-        if has_zmq:
-            #socketString = "ipc:///tmp/asynctap.0"
-            socketString = "tcp://127.0.0.1:5557"
-            self.process = multiprocessing.Process(target=RunAsyncTray, args=(socketString,self.segment,self.args,self.childIsReady,self.debug,))
+        self.debug = True
+        prefix = self.GetParameter("Prefix")
+        self.streams = self.GetParameter("Streams")
+        source, sink = ('ipc://'+tempfile.mktemp(prefix='clsim-ventilator-') for _ in range(2))
+        self.processes = [multiprocessing.Process(target=RunAsyncTray, args=(source,sink,prefix,self.streams,self.segment,self.args,i,True,)) for i in range(nworkers)]
+        self.child_ids = set(range(nworkers))
+
+        icetray.logging.log_debug("binding to zmq REP socket {}".format(source), unit="clsim.AsyncTap")
+        icetray.logging.log_debug("binding to zmq PULL socket {}".format(sink), unit="clsim.AsyncTap")
+
+        self.zmq_context = zmq.Context()
+        self.source = self.zmq_context.socket(zmq.REP)
+        self.sink = self.zmq_context.socket(zmq.PULL)
+        self.sink.setsockopt(zmq.RCVHWM, 1)
+        self.source.bind(source)
+        self.sink.bind(sink)
+        self.poller = zmq.Poller()
+        self.poller.register(self.source, zmq.POLLIN)
+        self.poller.register(self.sink, zmq.POLLIN)
+        
+        icetray.logging.log_debug("zmq socket is bound.", unit="clsim.AsyncTap")
+
+        for proc in self.processes:
+            proc.start()
+
+    def shutdown_workers(self):
+        while self.child_ids:
+            sockets = dict(self.poller.poll())
+            if self.sink in sockets:
+                self.consume_sink()
+            if self.source in sockets:
+                msg = self.source.recv_pyobj()
+                self.child_ids.add(msg)
+                icetray.logging.log_info("shutting down worker {}".format(msg), unit="clsim.AsyncTap")
+                self.source.send_pyobj(None)
+
+    def consume_sink(self):
+        msg = self.sink.recv_pyobj()
+        if isinstance(msg, int):
+            icetray.logging.log_info("worker {} finished".format(msg), unit="clsim.AsyncTap")
+            self.child_ids.remove(msg)
         else:
-            self.queueToProcess = multiprocessing.Queue(self.buffersize)
-            self.process = multiprocessing.Process(target=RunAsyncTray, args=(self.queueToProcess,self.segment,self.args,self.childIsReady,self.debug,))
-
-
-        if has_zmq:
-            if self.debug:
-                print("binding to zmq PUSH socket", socketString)
-                sys.stdout.flush()
-            self.zmq_context = zmq.Context()
-            self.queueToProcess = self.zmq_context.socket(zmq.PUSH)
-            self.queueToProcess.bind(socketString)
-            if self.debug:
-                print("zmq socket is bound.")
-                sys.stdout.flush()
-
-        self.process.start()
-        if self.debug:
-            print("child process running.")
-            sys.stdout.flush()
-
-        self.CheckOnChildProcess()
-        
-        if self.childIsReady.value == 0:
-            while True:
-                if not self.process.is_alive():
-                    print("*** child process died unexpectedly")
-                    raise RuntimeError("Child process died unexpectedly")
-                    
-                if self.debug:
-                    print("child process not ready yet, waiting..")
-                    sys.stdout.flush()
-                time.sleep(1) # sleep 1 second
-                if self.childIsReady.value != 0:
-                    break
-        if self.debug:
-            print("child process ready to receive data.")
-            sys.stdout.flush()
+            self.PushFrame(msg)
 
     def Process(self):
+        
         frame = self.PopFrame()
-        if self.debug: 
-            print("sending frame..", self.nframes , frame.Stop)
-            sys.stdout.flush()
-        if self.CheckOnChildProcess():
-            if has_zmq:
-                self.queueToProcess.send_pyobj(frame)
-            else:
-                self.queueToProcess.put(frame)
-        if self.debug: 
-            print("frame sent", self.nframes , frame.Stop)
-            sys.stdout.flush()
-        self.nframes += 1
-        self.PushFrame(frame)
+        if not frame.Stop in self.streams:
+            self.PushFrame(frame)
+            return
+
+        while self.child_ids:
+            sockets = dict(self.poller.poll())
+            if self.sink in sockets:
+                self.consume_sink()
+            if self.source in sockets:
+                msg = self.source.recv_pyobj()
+                self.child_ids.add(msg)
+                self.source.send_pyobj(frame)
+                self.nframes += 1
+                break
+        else:
+            raise RuntimeError("No workers left alive")
 
     def Finish(self):
-        if self.debug:
-            print("sent", self.nframes, "frames")
-            sys.stdout.flush()
-        if self.CheckOnChildProcess():
-            if has_zmq:
-                self.queueToProcess.send_pyobj(None) # signal receiver to quit
-            else:
-                self.queueToProcess.put(None) # signal receiver to quit
-        
-        if self.debug:
-            print("async module finished. waiting for child tray..")
-            sys.stdout.flush()
-        self.process.join()
-        if self.debug:
-            print("child tray finished.")
-            sys.stdout.flush()
+        self.shutdown_workers()
+        icetray.logging.log_debug("sent {} frames".format(self.nframes), unit="clsim.AsyncTap")
+
+        icetray.logging.log_debug("async module finished. waiting for child tray..", unit="clsim.AsyncTap")
+        for proc in self.processes:
+            proc.join()
+        icetray.logging.log_debug("child tray finished.", unit="clsim.AsyncTap")
 

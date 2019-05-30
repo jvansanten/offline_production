@@ -44,6 +44,7 @@ I3_FORWARD_DECLARATION(I3CLSimClient);
 I3_FORWARD_DECLARATION(I3CLSimLightSource);
 I3_FORWARD_DECLARATION(I3CLSimLightSourceToStepConverterAsync);
 I3_FORWARD_DECLARATION(I3CLSimPhotonToMCPEConverter);
+I3_FORWARD_DECLARATION(I3CLSimStepFactory);
 
 /**
  * @brief
@@ -120,6 +121,9 @@ private:
 
     /// Parameter: Name of a I3VectorOMKey with masked OMKeys. DOMs in this list will not record I3Photons.
     std::string omKeyMaskName_;
+
+    /// Parameter: Name of a uint64_t with the RNG key
+    std::string rngKeyName_;
     
     /// Parameter: If set to True, muons will not be propagated.
     bool ignoreMuons_;
@@ -223,10 +227,11 @@ public:
         };
         photonStatistics generatedPhotons, photonsAtDOMs;
         double timeShift; // optional time that needs to be added to the final output photon
+        I3CLSimStepFactoryPtr stepFactory;
         uint64_t particleMajorID;
         int particleMinorID;
-
-        particleCacheEntry(uint32_t id, const I3CLSimLightSource &lightSource, uint32_t frame, double dt);
+        
+        particleCacheEntry(uint32_t id, const I3CLSimLightSource &lightSource, uint32_t frame, double dt, I3CLSimStepFactoryPtr stepFactory);
         
         uint32_t key() const { return particleId; }
     };

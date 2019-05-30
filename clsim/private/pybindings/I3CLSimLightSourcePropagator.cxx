@@ -38,11 +38,11 @@ namespace bp = boost::python;
 
 namespace {
 
-I3MCTreePtr Convert(I3CLSimLightSourcePropagator &prop, I3CLSimLightSourceConstPtr source, uint32_t identifier, bp::object secondary_callback, bp::object step_callback)
+I3MCTreePtr Convert(I3CLSimLightSourcePropagator &prop, I3CLSimLightSourceConstPtr source, I3CLSimStepFactoryPtr stepFactory, bp::object secondary_callback, bp::object step_callback)
 {
-    I3CLSimLightSourcePropagator::secondary_callback emitSecondary = [&](I3CLSimLightSourceConstPtr &lightSource, uint32_t lightSourceIdentifier) ->bool
+    I3CLSimLightSourcePropagator::secondary_callback emitSecondary = [&](I3CLSimLightSourceConstPtr &lightSource, I3CLSimStepFactoryPtr stepFactory) ->bool
     {
-        bp::object ret = secondary_callback(boost::const_pointer_cast<I3CLSimLightSource>(lightSource), lightSourceIdentifier);
+        bp::object ret = secondary_callback(boost::const_pointer_cast<I3CLSimLightSource>(lightSource), stepFactory);
         return bp::extract<bool>(ret);
     };
     I3CLSimLightSourcePropagator::step_callback emitStep = [&](const I3CLSimStep &step)
@@ -50,7 +50,7 @@ I3MCTreePtr Convert(I3CLSimLightSourcePropagator &prop, I3CLSimLightSourceConstP
         step_callback(step);
     };
     
-    return prop.Convert(source, identifier, emitSecondary, emitStep);
+    return prop.Convert(source, stepFactory, emitSecondary, emitStep);
 }
 
 }
@@ -58,7 +58,6 @@ I3MCTreePtr Convert(I3CLSimLightSourcePropagator &prop, I3CLSimLightSourceConstP
 void register_I3CLSimLightSourcePropagator()
 {
     bp::class_<I3CLSimLightSourcePropagator, boost::shared_ptr<I3CLSimLightSourcePropagator>, boost::noncopyable>("I3CLSimLightSourcePropagator", bp::no_init)
-    .def("SetRandomService", bp::pure_virtual(&I3CLSimLightSourcePropagator::SetRandomService))
     .def("SetWlenBias", bp::pure_virtual(&I3CLSimLightSourcePropagator::SetWlenBias))
     .def("SetMediumProperties", bp::pure_virtual(&I3CLSimLightSourcePropagator::SetMediumProperties))
     .def("Initialize", bp::pure_virtual(&I3CLSimLightSourcePropagator::Initialize))

@@ -76,6 +76,7 @@ SET(LIB_${PROJECT_NAME}_SOURCEFILES
   # private/clsim/I3Photon.cxx
   # private/clsim/I3CompressedPhoton.cxx
   private/clsim/I3CLSimFlasherPulse.cxx
+  private/clsim/util/I3RNGKeyInjector.cxx
   private/clsim/util/I3MuonSlicer.cxx
   private/clsim/util/I3MuonSliceRemoverAndPulseRelabeler.cxx
   private/clsim/util/I3TauSanitizer.cxx
@@ -220,9 +221,11 @@ if(NOT BUILD_CLSIM_DATACLASSES_ONLY)
     private/clsim/random_value/I3CLSimRandomValueFixParameter.cxx
     private/clsim/random_value/I3CLSimRandomValueConstant.cxx
     private/clsim/random_value/I3CLSimRandomValueUniform.cxx
+    private/clsim/random_generator/I3Philox4x32.cxx
     private/clsim/I3CLSimSimpleGeometryFromI3Geometry.cxx
     private/clsim/I3CLSimSimpleGeometryTextFile.cxx
     private/clsim/I3CLSimStep.cxx
+    private/clsim/I3CLSimStepFactory.cxx
     private/clsim/function/I3CLSimFunctionAbsLenIceCube.cxx
     private/clsim/function/I3CLSimFunctionConstant.cxx
     private/clsim/function/I3CLSimFunctionDeltaPeak.cxx
@@ -300,6 +303,7 @@ if (GEANT4_FOUND AND OPENCL_FOUND AND NOT DISABLE_GEANT4_IN_CLSIM)
         private/geant4/TrkStackingAction.cxx
         private/geant4/TrkUISessionToQueue.cxx
         private/geant4/TrkUserEventInformation.cxx
+        private/geant4/HepRandomEngineFromI3RandomService.cxx
         private/geant4/I3CLSimLightSourcePropagatorGeant4.cxx
     )
     LIST(APPEND LIB_${PROJECT_NAME}_TOOLS clhep geant4)
@@ -321,6 +325,7 @@ i3_add_library(${PROJECT_NAME}
   USE_TOOLS ${LIB_${PROJECT_NAME}_TOOLS}
   USE_PROJECTS ${LIB_${PROJECT_NAME}_PROJECTS}
   )
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/resources/kernels/Random123/include)
 
 if(NOT BUILD_CLSIM_DATACLASSES_ONLY)
   # run python tests if in full-build mode

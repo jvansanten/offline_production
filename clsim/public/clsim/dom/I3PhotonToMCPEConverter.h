@@ -83,6 +83,8 @@ private:
     // parameters
     
     /// Parameter: A random number generating service (derived from I3RandomService).
+    boost::shared_ptr<I3RandomService> randomService_;
+
     boost::shared_ptr<I3CLSimPhotonToMCPEConverter> mcpeGenerator_;
 
     /// Parameter: Name of the input I3PhotonSeriesMap frame object. 
@@ -111,11 +113,10 @@ private:
 
 class I3CLSimPhotonToMCPEConverterForDOMs : public I3CLSimPhotonToMCPEConverter {
 public:
-    I3CLSimPhotonToMCPEConverterForDOMs(I3RandomServicePtr, boost::shared_ptr<const std::map<OMKey, I3CLSimFunctionConstPtr>>, I3CLSimFunctionConstPtr);
+    I3CLSimPhotonToMCPEConverterForDOMs(boost::shared_ptr<const std::map<OMKey, I3CLSimFunctionConstPtr>>, I3CLSimFunctionConstPtr);
     virtual ~I3CLSimPhotonToMCPEConverterForDOMs();
-    virtual boost::optional<std::tuple<OMKey,I3MCPE>> Convert(const ModuleKey&, const I3CompressedPhoton &) const override;
+    virtual boost::optional<std::tuple<OMKey,I3MCPE>> Convert(I3RandomService &randomService, const ModuleKey&, const I3CompressedPhoton &) const override;
 private:
-    I3RandomServicePtr randomService_;
     boost::shared_ptr<const std::map<OMKey, I3CLSimFunctionConstPtr>> wavelengthAcceptance_;
     I3CLSimFunctionConstPtr angularAcceptance_;
 };

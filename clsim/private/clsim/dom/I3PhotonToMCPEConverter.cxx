@@ -60,6 +60,10 @@ I3PhotonToMCPEConverter::I3PhotonToMCPEConverter(const I3Context& context)
                  "Instance of I3CLSimPhotonToMCPEConverter",
                  mcpeGenerator_);
 
+    AddParameter("RandomService",
+                 "Instance of I3RandomService",
+                 randomService_);
+
     inputPhotonSeriesMapName_="PropagatedPhotons";
     AddParameter("InputPhotonSeriesMapName",
                  "Name of the input I3PhotonSeriesMap frame object.",
@@ -95,6 +99,9 @@ void I3PhotonToMCPEConverter::Configure()
     GetParameter("MCPEGenerator", mcpeGenerator_);
     if (!mcpeGenerator_)
         log_fatal("You must set an MCPEGenerator");
+    GetParameter("RandomService", randomService_);
+    if (!randomService_)
+        log_fatal("You must set an I3RandomService");
 
     GetParameter("InputPhotonSeriesMapName", inputPhotonSeriesMapName_);
     GetParameter("OutputMCPESeriesMapName", outputMCPESeriesMapName_);
@@ -153,7 +160,7 @@ I3PhotonToMCPEConverter::Convert(I3FramePtr frame)
         {
             CheckSanity(photon);
 
-            auto hit = mcpeGenerator_->Convert(module_key, photon);
+            auto hit = mcpeGenerator_->Convert(*randomService_, module_key, photon);
             if (!hit)
                 continue;
 
@@ -230,15 +237,15 @@ void I3PhotonToMCPEConverter::Finish()
 
 I3CLSimPhotonToMCPEConverter::~I3CLSimPhotonToMCPEConverter() {}
 
-I3CLSimPhotonToMCPEConverterForDOMs::I3CLSimPhotonToMCPEConverterForDOMs(I3RandomServicePtr random,
+I3CLSimPhotonToMCPEConverterForDOMs::I3CLSimPhotonToMCPEConverterForDOMs(
     boost::shared_ptr<const std::map<OMKey, I3CLSimFunctionConstPtr>> wavelengthAcceptance, I3CLSimFunctionConstPtr angularAcceptance)
-    : randomService_(random), wavelengthAcceptance_(wavelengthAcceptance), angularAcceptance_(angularAcceptance)
+    : wavelengthAcceptance_(wavelengthAcceptance), angularAcceptance_(angularAcceptance)
 {}
 
 I3CLSimPhotonToMCPEConverterForDOMs::~I3CLSimPhotonToMCPEConverterForDOMs() {}
 
 boost::optional<std::tuple<OMKey,I3MCPE>>
-I3CLSimPhotonToMCPEConverterForDOMs::Convert(const ModuleKey &mkey, const I3CompressedPhoton &photon) const
+I3CLSimPhotonToMCPEConverterForDOMs::Convert(I3RandomService &randomService, const ModuleKey &mkey, const I3CompressedPhoton &photon) const
 {
     boost::optional<std::tuple<OMKey,I3MCPE>> hit;
     double hitProbability = photon.GetWeight();
@@ -302,7 +309,7 @@ I3CLSimPhotonToMCPEConverterForDOMs::Convert(const ModuleKey &mkey, const I3Comp
     }
     
     // does it survive?
-    if (hitProbability <= randomService_->Uniform()) return hit;
+    if (hitProbability <= randomService.Uniform()) return hit;
     
     // FIXME: roll arrival time correction into kernel
     hit.emplace(omkey,I3MCPE(photon.GetParticleID(), 1, photon.GetTime()));
