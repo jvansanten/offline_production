@@ -31,7 +31,7 @@
 #include <I3/hash_map.h>
 #include "dataclasses/physics/I3Particle.h"
 #include "dataclasses/physics/I3ParticleID.h"
-
+#include "dataclasses/physics/detail/I3MCTree_fwd.h"
 
 /* Define basic tree structures here instead of in I3Tree so 
    we don't break other tree operations with the I3MCTree upgrade
@@ -103,7 +103,7 @@ namespace TreeBase {
    *
    * Note that Key must be unique and equality comparable.
    */
-  template<typename T, typename Key=T, typename Hash=hash<Key> >
+  template<typename T, typename Key, typename Hash>
   class Tree : public I3FrameObject {
     public:
       typedef T                         value_type;

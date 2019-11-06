@@ -1,7 +1,6 @@
 #include <icetray/serialization.h>
 #include <icetray/I3Units.h>
 #include <dataclasses/physics/I3Particle.h>
-#include <boost/functional/hash/hash.hpp>
 #include <dataclasses/I3Constants.h>
 
 #include <limits>
@@ -12,88 +11,9 @@
 #include <boost/preprocessor/seq/for_each.hpp>
 #include <boost/lexical_cast.hpp>
 
-#if BOOST_VERSION >= 105300
-#define USE_ATOMICS
-#endif
-
-#ifdef USE_ATOMICS
-#include <boost/thread/lock_guard.hpp>
-#include <boost/thread/mutex.hpp>
-#include <boost/atomic.hpp>
-#endif
-
-#include <unistd.h>
-#include <cstdlib>
-
-#ifdef USE_ATOMICS
-namespace{
-	boost::mutex global_id_lock;
-	
-	boost::atomic<int32_t> global_last_pid_(0);
-	boost::atomic<int32_t> global_minor_id_(0);
-	boost::atomic<uint64_t> global_major_id_(0);
-}
-#else
-static int32_t global_last_pid_ = 0;
-static int32_t global_minor_id_ = 0;
-static uint64_t global_major_id_ = 0;
-#endif
-
-void I3Particle::generateID(){
-  int this_pid = getpid();
-  
-#ifdef USE_ATOMICS //thread-safe version
-  int32_t last_pid=global_last_pid_.load(boost::memory_order_relaxed);
-  boost::atomic_thread_fence(boost::memory_order_acquire); //keep memory ops from wandering
-  if (this_pid != last_pid) {
-    boost::lock_guard<boost::mutex> lg(global_id_lock); //acquire the lock
-    //check whether another thread already updated this
-    last_pid=global_last_pid_.load(boost::memory_order_relaxed);
-    if(this_pid != last_pid){
-      log_debug("PID has changed from %i to %i. regenerating I3Particle::majorID.", last_pid, this_pid);
-      boost::atomic_thread_fence(boost::memory_order_release);
-      global_last_pid_.store(this_pid, boost::memory_order_relaxed);
-      global_major_id_.store(0, boost::memory_order_relaxed); // this will cause a new major ID to be generated
-      global_minor_id_.store(0, boost::memory_order_relaxed); // reset the minor ID, too
-    }
-  }
-  
-  uint64_t old_major_id=global_major_id_.load(boost::memory_order_relaxed);
-  boost::atomic_thread_fence(boost::memory_order_acquire); //keep memory ops from wandering
-  if(old_major_id==0){
-    boost::lock_guard<boost::mutex> lg(global_id_lock); //acquire the lock
-    //check whether another thread already updated this
-    old_major_id=global_major_id_.load(boost::memory_order_relaxed);
-    if(old_major_id==0){
-      boost::hash<std::string> string_hash;
-      std::stringstream s;
-      s<<time(0)<<this_pid<<gethostid();
-      boost::atomic_thread_fence(boost::memory_order_release);
-      global_major_id_.store(string_hash(s.str()), boost::memory_order_relaxed);
-    }
-  }
-  ID_.majorID = global_major_id_.load();
-  ID_.minorID = global_minor_id_.fetch_add(1);
-#else //unsafe version if atomics aren't available
-  if (this_pid != global_last_pid_) {
-    log_debug("PID has changed from %i to %i. regenerating I3Particle::majorID.", global_last_pid_, this_pid);
-    global_last_pid_ = this_pid;
-    global_major_id_ = 0; // this will cause a new major ID to be generated
-    global_minor_id_ = 0; // reset the minor ID, too
-  }
-  if(global_major_id_ ==0){
-    boost::hash<std::string> string_hash;
-    std::stringstream s;
-    s<<time(0)<<this_pid<<gethostid();
-    global_major_id_ = string_hash(s.str());
-  }
-  ID_.majorID = global_major_id_;
-  ID_.minorID = global_minor_id_++;
-#endif
-}
-
 I3Particle::~I3Particle() { }
 I3Particle::I3Particle(ParticleShape shape, ParticleType type) : 
+  ID_(I3ParticleID::create()),
   pdgEncoding_(type),
   shape_(shape),
   pos_(),
@@ -105,12 +25,11 @@ I3Particle::I3Particle(ParticleShape shape, ParticleType type) :
   status_(NotSet),
   locationType_(Anywhere)
 {
-  generateID();
-  
   log_trace_stream("Calling I3Particle::I3Particle(ParticleShape " << shape << ", ParticleType " << type << ").");
 }
 
 I3Particle::I3Particle(const I3Position pos, const I3Direction dir, const double vertextime, ParticleShape shape, double length) : 
+  ID_(I3ParticleID::create()),
   pdgEncoding_(unknown),
   shape_(shape),
   pos_(pos),
@@ -121,11 +40,10 @@ I3Particle::I3Particle(const I3Position pos, const I3Direction dir, const double
   speed_(I3Constants::c),
   status_(NotSet),
   locationType_(Anywhere)
-{
-  generateID();
-}
+{}
 
 I3Particle::I3Particle(const uint64_t major, const int32_t minor) :
+  ID_(major,minor),
   pdgEncoding_(unknown),
   shape_(Null),
   pos_(),
@@ -136,10 +54,7 @@ I3Particle::I3Particle(const uint64_t major, const int32_t minor) :
   speed_(I3Constants::c),
   status_(NotSet),
   locationType_(Anywhere)
-{
-  ID_.majorID = major;
-  ID_.minorID = minor;
-}
+{}
 
 I3Particle I3Particle::Clone() const {
   I3Particle p;
@@ -368,7 +283,7 @@ void I3Particle::SetTotalEnergy(double total_energy)
 // line converting from enum to string
 #define MAKE_ENUM_TO_STRING_CASE_LINE(r, data, t) case I3Particle::t : return BOOST_PP_STRINGIZE(t);
 
-std::string i3particle_type_string(int32_t pdg_code)
+std::string I3Particle::GetTypeString(int32_t pdg_code)
 {
   switch (pdg_code) {
     BOOST_PP_SEQ_FOR_EACH(MAKE_ENUM_TO_STRING_CASE_LINE, ~, I3PARTICLE_H_I3Particle_ParticleType)
@@ -378,15 +293,20 @@ std::string i3particle_type_string(int32_t pdg_code)
 
 std::string I3Particle::GetTypeString() const
 {
-  return i3particle_type_string(pdgEncoding_);
+  return GetTypeString(pdgEncoding_);
 }
 
 std::string I3Particle::GetShapeString() const
 {
-  switch (shape_) {
+  return GetShapeString(shape_);
+}
+
+std::string I3Particle::GetShapeString(ParticleShape shape)
+{
+  switch (shape) {
     BOOST_PP_SEQ_FOR_EACH(MAKE_ENUM_TO_STRING_CASE_LINE, ~, I3PARTICLE_H_I3Particle_ParticleShape)
   }
-  return(boost::lexical_cast<std::string>( shape_ ));
+  return(boost::lexical_cast<std::string>( shape ));
 }
 
 std::string I3Particle::GetFitStatusString() const

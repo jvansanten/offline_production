@@ -42,7 +42,11 @@ struct I3ParticleID{
     majorID(major), minorID(minor){};
 
   std::ostream& Print(std::ostream&) const;
-  
+
+  /** @brief generate a new, unique ID combination
+   */
+  static I3ParticleID create();
+
   /**
    * Need to tell gcc to ignore the "maybe unitialized warning"
    * in this case.  A default constructor was added that initializes

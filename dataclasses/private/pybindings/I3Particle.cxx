@@ -62,7 +62,7 @@ void register_I3Particle()
       class_<I3Particle, bases<I3FrameObject>, boost::shared_ptr<I3Particle> >("I3Particle")
       #define RO_PROPERTIES (MajorID)(MinorID)(ID)(Mass)
       #define PROPERTIES (Time)(Energy)(TotalEnergy)(KineticEnergy)(Shape)(Type)(PdgEncoding)(Length)(Speed)(FitStatus)(LocationType) \
-                         (ShapeString)(TypeString)(FitStatusString)(LocationTypeString)
+                         (FitStatusString)(LocationTypeString)
       #define CONVENIENCE_BOOLS (IsTrack)(IsCascade)(IsTopShower)(IsNeutrino)(HasMass)
       BOOST_PP_SEQ_FOR_EACH(WRAP_PROP_RO, I3Particle, RO_PROPERTIES)
       BOOST_PP_SEQ_FOR_EACH(WRAP_PROP, I3Particle, PROPERTIES)
@@ -70,7 +70,10 @@ void register_I3Particle()
       #undef RO_PROPERTIES
       #undef PROPERTIES
       #undef CONVENIENCE_BOOLS
-      
+      // special-case TypeString and ShapeString (ambiguous because of static overload)
+      .add_property("type_string", (std::string (I3Particle::*)() const) &I3Particle::GetTypeString, &I3Particle::SetTypeString)
+      .add_property("shape_string", (std::string (I3Particle::*)() const) &I3Particle::GetShapeString, &I3Particle::SetShapeString)
+
       .add_property("pos", make_function( (const I3Position& (I3Particle::*)()) &I3Particle::GetPos, return_internal_reference<1>() ),
                                           (void (I3Particle::*)(const I3Position&)) &I3Particle::SetPos )
       .add_property("dir", make_function( (const I3Direction& (I3Particle::*)()) &I3Particle::GetDir, return_internal_reference<1>() ),

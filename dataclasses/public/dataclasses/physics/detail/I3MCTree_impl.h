@@ -1444,7 +1444,7 @@ namespace TreeBase {
       // load new Tree
       ar & make_nvp("I3FrameObject", base_object<I3FrameObject>(*this));
       boost::dynamic_bitset<uint64_t> nullMask(CHUNK_SIZE_);
-      std::vector<I3Particle> dataChunk;
+      std::vector<T> dataChunk;
       // TODO: think about implementing our own hash_map<allocator>
       // and swapping hash_maps to make L2 caching better
       std::pair<Key,treeNode > * newNodes;
@@ -1452,7 +1452,7 @@ namespace TreeBase {
       uint32_t chunkSize(0),numElements(0), i(0), elements(0);
       bool firstChild(true);
       treeNode* n = NULL;
-      I3Particle p;
+      T p;
       do {
         nullMask.reset();
         i=0;
@@ -1526,7 +1526,7 @@ namespace TreeBase {
       return;
     }
     boost::dynamic_bitset<uint64_t> nullMask(CHUNK_SIZE_);
-    std::vector<const I3Particle*> dataChunk;
+    std::vector<const T*> dataChunk;
     typename tree_hash_map::const_iterator iter = internalMap.find(*head_);
     const treeNode* n = &(iter->second);
     const treeNode* nprev = NULL;
@@ -1560,7 +1560,7 @@ namespace TreeBase {
       std::vector<unsigned long> vec(nullMask.num_blocks());
       to_block_range(nullMask, vec.begin());
       ar & make_nvp("chunkMask",vec);
-      BOOST_FOREACH(const I3Particle* part, dataChunk)
+      BOOST_FOREACH(const T* part, dataChunk)
         ar & make_nvp("particle",*part);
       nullMask.reset();
       dataChunk.clear();

@@ -320,12 +320,15 @@ class I3Particle : public I3FrameObject
     
   ParticleType GetType() const { return ParticleType(pdgEncoding_); };
   std::string GetTypeString() const;
+  static std::string GetTypeString(int32_t pdgEncoding);
 
   void SetType(ParticleType type) { pdgEncoding_ = type; };
   void SetTypeString(const std::string &str);
 
   ParticleShape GetShape() const { return shape_; }
   std::string GetShapeString() const;
+  static std::string GetShapeString(ParticleShape shape);
+
   void SetShape(ParticleShape shape) { shape_ = shape; }
   void SetShapeString(const std::string &str);
 
@@ -432,12 +435,9 @@ class I3Particle : public I3FrameObject
    * @param minor MinorID of that particle
    */
   I3Particle(const uint64_t major, const int32_t minor);
-  
-  /** @brief generate a new, unique ID combination
-   */
-  void generateID();
 
   friend class I3Stochastic;
+  friend class I3MCTrajectory;
   // since that ctor is private we need to give this
   // class friend access to test it
   friend class test_particle_id_private_ctor;
@@ -449,11 +449,6 @@ class I3Particle : public I3FrameObject
 };
 
 static const unsigned i3particle_version_ = 5;
-
-/**
- * Get name of an I3Particle::ParticleType as a string
- */
-std::string i3particle_type_string(int32_t pdg_code);
 
 // let other code know that I3Particle stores PDG encodings internally
 #define I3PARTICLE_SUPPORTS_PDG_ENCODINGS

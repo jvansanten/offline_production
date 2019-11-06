@@ -6,6 +6,8 @@ i3_project(simclasses
 SET(LIB_${PROJECT_NAME}_SOURCEFILES 
   private/simclasses/CorsikaLongStep.cxx
   private/simclasses/I3MMCTrack.cxx
+  private/simclasses/I3MCTrajectory.cxx
+  private/simclasses/I3MCTrajectoryTree.cxx
   private/simclasses/I3MCNKGInfo.cxx
   private/simclasses/I3CorsikaShowerInfo.cxx
   private/simclasses/I3MCPulse.cxx
@@ -77,3 +79,10 @@ i3_add_pybindings(simclasses
   )
 
 i3_test_scripts(resources/test/*.py)
+
+i3_test_executable(test
+  private/test/main.cxx
+  private/test/I3MCTrajectoryTest.cxx
+  USE_TOOLS boost python
+  USE_PROJECTS simclasses icetray dataclasses
+)

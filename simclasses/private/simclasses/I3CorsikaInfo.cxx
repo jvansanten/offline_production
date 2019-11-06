@@ -33,7 +33,7 @@ std::ostream& I3CorsikaInfo::Print(std::ostream& oss) const{
   oss << "[ I3CorsikaInfo" << std::endl
       << "            run_id : " << run_id << std::endl
       << "          n_events : " << n_events << std::endl
-      << "      primary_type : " << i3particle_type_string(primary_type) << std::endl
+      << "      primary_type : " << I3Particle::GetTypeString(primary_type) << std::endl
       << "        atmosphere : " << atmosphere << std::endl    
       << "      oversampling : " << oversampling << std::endl
       << "   cylinder_height : " << cylinder_height << std::endl

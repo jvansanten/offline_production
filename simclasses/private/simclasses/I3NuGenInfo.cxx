@@ -28,7 +28,7 @@ std::ostream& I3NuGenInfo::Print(std::ostream& oss) const{
   oss << "[ I3NuGenInfo" << std::endl
       << "            run_id : " << run_id << std::endl
       << "          n_events : " << n_events << std::endl
-      << "      primary_type : " << i3particle_type_string(primary_type) << std::endl
+      << "      primary_type : " << I3Particle::GetTypeString(primary_type) << std::endl
       << "   flavor_fraction : " << flavor_fraction << std::endl    
       << "   cylinder_height : " << cylinder_height << std::endl
       << "   cylinder_radius : " << cylinder_radius << std::endl
