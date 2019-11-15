@@ -26,6 +26,7 @@
 #define REGISTER_THESE_THINGS                       \
     (I3Photon)(I3CompressedPhoton)                  \
     (I3Converters)(I3ExtraGeometryItem)		    \
+    (I3MCTrajectory)(I3MCTrajectoryTree)            \
 
 #define I3_REGISTRATION_FN_DECL(r, data, t) void BOOST_PP_CAT(register_,t)();
 #define I3_REGISTER(r, data, t) BOOST_PP_CAT(register_,t)();

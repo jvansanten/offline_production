@@ -60,6 +60,8 @@ i3_add_pybindings(simclasses
   private/pybindings/I3CorsikaShowerInfo.cxx
   private/pybindings/I3MMCTrack.cxx
   private/pybindings/I3MCPulse.cxx
+  private/pybindings/I3MCTrajectory.cxx
+  private/pybindings/I3MCTrajectoryTree.cxx
   private/pybindings/I3ParticleIDMap.cxx
   private/pybindings/I3MCPE.cxx
   private/pybindings/I3Photon.cxx

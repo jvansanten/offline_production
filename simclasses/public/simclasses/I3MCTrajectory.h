@@ -53,7 +53,7 @@ public:
         : pdgEncoding_(type),
           position_({pos.GetX(),pos.GetY(),pos.GetZ()}),
           time_(time),
-          energy_(energy),
+          energy_(std::max(0., energy - GetMass())),
           state_(InitialState({dir.GetZenith(),dir.GetAzimuth()}))
     {
         auto id = I3ParticleID::create();
@@ -68,6 +68,22 @@ public:
     /// \cond
     operator I3ParticleID() const { return I3ParticleID(majorID_,minorID_); }
     /// \endcond
+
+    bool operator==(const I3MCTrajectory& rhs) const {
+      return ( majorID_ == rhs.majorID_ &&
+          minorID_ == rhs.minorID_ && 
+          pdgEncoding_ == rhs.pdgEncoding_ &&
+          CompareFloatingPoint::Compare_NanEqual(position_[0], rhs.position_[0]) &&
+          CompareFloatingPoint::Compare_NanEqual(position_[1], rhs.position_[1]) &&
+          CompareFloatingPoint::Compare_NanEqual(position_[2], rhs.position_[2]) &&
+          CompareFloatingPoint::Compare_NanEqual(time_, rhs.time_) &&
+          CompareFloatingPoint::Compare_NanEqual(energy_, rhs.energy_) &&
+          state_ == rhs.state_
+      );
+    }
+    bool operator!=(const I3MCTrajectory& rhs) const {
+      return !(*this == rhs);
+    }
 
     I3Particle::ParticleType GetType() const { return I3Particle::ParticleType(pdgEncoding_); } 
 
@@ -136,9 +152,10 @@ public:
     }
     
     /// @returns The particle's mass in I3Units
+    /// NB: pseudoparticles in the PDG code range above 2e6 are considered massless
     double GetMass() const
     {
-        return I3Particle::GetMassForType(GetType());
+        return (std::abs(GetType()) > 2000000000) ? 0 : I3Particle::GetMassForType(GetType());
     }
 
     /// @param[in] index index of the segment
@@ -233,15 +250,36 @@ private:
         double x,y,z;
         I3Position GetPos() const { return I3Position(x,y,z); }
         template <class Archive> void serialize(Archive& ar, unsigned version);
+        bool operator==(const Checkpoint& rhs) const {
+          return (
+              CompareFloatingPoint::Compare_NanEqual(time, rhs.time) &&
+              CompareFloatingPoint::Compare_NanEqual(energy, rhs.energy) &&
+              CompareFloatingPoint::Compare_NanEqual(x, rhs.x) &&
+              CompareFloatingPoint::Compare_NanEqual(y, rhs.y) &&
+              CompareFloatingPoint::Compare_NanEqual(z, rhs.z)
+          );
+        }
     };
     struct InitialState {
         double zenith, azimuth;
         template <class Archive> void serialize(Archive& ar, unsigned version);
+        bool operator==(const InitialState& rhs) const {
+          return (
+              CompareFloatingPoint::Compare_NanEqual(zenith, rhs.zenith) &&
+              CompareFloatingPoint::Compare_NanEqual(azimuth, rhs.azimuth)
+          );
+        }
     };
     static_assert(2*sizeof(InitialState) < sizeof(I3Direction), "I3Direction is bloated");
     struct FinalState {
         double zenith, azimuth;
         template <class Archive> void serialize(Archive& ar, unsigned version);
+        bool operator==(const FinalState& rhs) const {
+          return (
+              CompareFloatingPoint::Compare_NanEqual(zenith, rhs.zenith) &&
+              CompareFloatingPoint::Compare_NanEqual(azimuth, rhs.azimuth)
+          );
+        }
     };
 
     // NB: we store the components of I3ParticleID separately to prevent

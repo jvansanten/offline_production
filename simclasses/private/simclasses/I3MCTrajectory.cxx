@@ -27,6 +27,24 @@ I3MCTrajectory::operator I3Particle() const
     return p;
 }
 
+std::ostream& operator<<(std::ostream& oss, const I3MCTrajectory& p)
+{
+    I3Position pos = p.GetPos();
+    I3Direction dir = p.GetDir();
+    oss << "[ I3MCTrajectory " << std::endl
+        << "              ID : " << I3ParticleID(p) << std::endl
+        << "        zen, azi : " << dir.GetZenith()/I3Units::deg  << ", " << dir.GetAzimuth()/I3Units::deg << " deg" << std::endl
+        << "           x,y,z : " << pos.GetX() << ", " << pos.GetY() << ", " << pos.GetZ() << std::endl
+        << "            time : " << p.GetTime() << std::endl
+        << "     kin. energy : " << p.GetKineticEnergy() << std::endl
+        << "          length : " << p.GetDisplacement() << std::endl
+        << "            type : " << I3Particle::GetTypeString(p.GetType()) << std::endl
+        << "           shape : " << I3Particle::GetShapeString(p.GetShape()) << std::endl
+        << "           steps : " << p.GetNumSteps() << std::endl
+        << "]" ;
+    return oss;
+}
+
 template <class Archive> 
 void I3MCTrajectory::Checkpoint::serialize(Archive& ar, unsigned version)
 {
