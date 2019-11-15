@@ -91,12 +91,12 @@ namespace I3MCTreeUtils
    * \param func Callable which takes two I3Particles, compares them, and returns
    *             true if the first is better, false if the second is better
    */
-  template<typename Function>
-  const typename I3MCTree::optional_value
-  GetBest(const I3MCTree& t, Function func)
+  template<typename Tree, typename Function>
+  const typename Tree::optional_value
+  GetBest(const Tree& t, Function func)
   {
-    typename I3MCTree::fast_const_iterator iter(t), end=t.cend_fast();
-    typename I3MCTree::optional_value ret;
+    typename Tree::fast_const_iterator iter(t), end=t.cend_fast();
+    typename Tree::optional_value ret;
     if (iter == end)
       return ret;
     ret = *iter++;
@@ -128,12 +128,12 @@ namespace I3MCTreeUtils
    * \param t    I3MCTree
    * \param func Callable which takes an I3Particle and returns true/false
    */
-  template<typename Function>
-  const std::vector<I3Particle>
-  GetFilter(const I3MCTree& t, Function func)
+  template<typename Tree, typename Function>
+  const std::vector<typename Tree::value_type>
+  GetFilter(const Tree& t, Function func)
   {
-    std::vector<I3Particle> ret;
-    typename I3MCTree::fast_const_iterator iter(t), end=t.cend_fast();
+    std::vector<typename Tree::value_type> ret;
+    typename Tree::fast_const_iterator iter(t), end=t.cend_fast();
     for(;iter != end;iter++) {
       if (func(*iter))
         ret.push_back(*iter);
@@ -162,12 +162,12 @@ namespace I3MCTreeUtils
    * \param c Callable which takes two I3Particles, compares them, and returns
    *          true if the first is better, false if the second is better
    */
-  template<typename FilterFunction,typename CmpFunction>
-  const typename I3MCTree::optional_value
-  GetBestFilter(const I3MCTree& t, FilterFunction f, CmpFunction c)
+  template<typename Tree, typename FilterFunction,typename CmpFunction>
+  const typename Tree::optional_value
+  GetBestFilter(const Tree& t, FilterFunction f, CmpFunction c)
   {
-    typename I3MCTree::optional_value ret;
-    typename I3MCTree::fast_const_iterator iter(t), end=t.cend_fast();
+    typename Tree::optional_value ret;
+    typename Tree::fast_const_iterator iter(t), end=t.cend_fast();
     for(;iter != end;iter++) {
       if (f(*iter) && (!ret || !c(*ret,*iter)))
         ret = *iter;

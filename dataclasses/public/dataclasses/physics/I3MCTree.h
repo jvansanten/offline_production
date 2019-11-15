@@ -112,6 +112,8 @@ namespace TreeBase {
       typedef size_t                    size_type;
       typedef ptrdiff_t                 difference_type;
       typedef std::forward_iterator_tag iterator_category;
+      typedef Key                       key_type;
+      typedef T                         mapped_type;
       
       /** \typedef optional_value
        * The optional_value is used when returning by value
