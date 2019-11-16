@@ -417,7 +417,10 @@ private:
                     throw std::domain_error("Checkpoint times must be strictly increasing");
                 }
                 if (!(energy_ <= v.back().energy)) {
-                    throw std::domain_error("Checkpoint energy must be <= previous checkpoint");
+                    std::ostringstream oss;
+                    oss << "Checkpoint "<<v.size()+1<<" has energy "<<energy_
+                        <<" > checkoint "<<v.size()<<" ("<<v.back().energy<<")";
+                    throw std::domain_error(oss.str());
                 }
                 v.push_back(
                     {
@@ -428,15 +431,14 @@ private:
                         displacement_.GetZ()
                     });
             }
-            result_type operator()(InitialState &v) const { InitializeTrajectory(); }
-            result_type operator()(FinalState &v) const { InitializeTrajectory(); }
-            result_type InitializeTrajectory() const
+            template <typename T>
+            result_type operator()(T &v) const
             {
                 if (!(reltime_ > 0)) {
                     throw std::domain_error("Checkpoint times must be strictly increasing");
                 }
                 if (!(energy_ <= self_.energy_)) {
-                    throw std::domain_error("Checkpoint energy must be <= previous checkpoint");
+                    throw std::domain_error("Checkpoint energy must be <= initial energy");
                 }
                 self_.state_ = std::vector<Checkpoint>(
                     1,

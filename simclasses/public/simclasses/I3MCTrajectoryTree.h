@@ -6,7 +6,18 @@
 /**
  * I3MCTree - This goes into the frame and everyone can see it
  */
-typedef TreeBase::Tree<I3MCTrajectory,I3ParticleID> I3MCTrajectoryTree;
+class I3MCTrajectoryTree : public TreeBase::Tree<I3MCTrajectory,I3ParticleID> {
+public:
+    using TreeBase::Tree<I3MCTrajectory,I3ParticleID>::Tree;
+
+    explicit operator I3MCTree() const { return to_I3MCTree(); };
+    I3MCTree to_I3MCTree() const;
+private:
+    friend class icecube::serialization::access;
+    using TreeBase::Tree<I3MCTrajectory,I3ParticleID>::load;
+    using TreeBase::Tree<I3MCTrajectory,I3ParticleID>::save;
+    I3_SERIALIZATION_SPLIT_MEMBER();
+};
 
 I3_CLASS_VERSION(I3MCTrajectoryTree,TreeBase::tree_version_);
 I3_POINTER_TYPEDEFS(I3MCTrajectoryTree);

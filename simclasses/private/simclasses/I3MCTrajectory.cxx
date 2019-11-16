@@ -49,7 +49,7 @@ template <class Archive>
 void I3MCTrajectory::Checkpoint::serialize(Archive& ar, unsigned version)
 {
     ar & make_nvp("time", time);
-    ar & make_nvp("time", time);
+    ar & make_nvp("energy", energy);
     ar & make_nvp("x", x);
     ar & make_nvp("y", y);
     ar & make_nvp("z", z);
