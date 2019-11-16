@@ -3,6 +3,7 @@
 #include "dataclasses/physics/I3Particle.h"
 #include "dataclasses/physics/I3ParticleID.h"
 #include "dataclasses/physics/detail/I3MCTree_fwd.h"
+#include "phys-services/surfaces/Surface.h"
 
 #include <boost/variant.hpp>
 
@@ -23,10 +24,10 @@ static const unsigned i3mctrajectory_version_ = 1;
 /// - An initial state: The state at construction, or after a call to Clear().
 ///   It has a position, time, initial direction, and kinetic energy.
 ///   GetDisplacement() returns NAN, and GetShape() returns Null.
-/// - A pointlike particle: The state after a call to SetPointlike().
+/// - A pointlike trajectory: The state after a call to SetPointlike().
 ///   GetDisplacement() returns 0, and GetShape() returns Cascade.
-/// - A trajectory: The state after one or more calls to AddPoint(). In this
-///   state, the trajectory has one or more checkpoints where the time, energy,
+/// - A ranged trajectory: The state after one or more calls to AddPoint(). In
+///   this state, the trajectory has one or more checkpoints where the time, energy,
 ///   and position of the particle are known. In the segments between these
 ///   checkpoints, the particle momentum is constant. GetDisplacement() returns
 ///   the distance from the vertex to the last checkpoint, and GetShape()
@@ -150,7 +151,7 @@ public:
     {
         return boost::apply_visitor(visitors::GetEnergy(*this, index), state_);
     }
-    
+
     /// @returns The particle's mass in I3Units
     /// NB: pseudoparticles in the PDG code range above 2e6 are considered massless
     double GetMass() const
@@ -188,8 +189,6 @@ public:
     /// @param[in] pos The new vertex position
     /// Since the trajectory points are relative to the vertex, this moves them
     /// as well.
-    void SetPos(I3Position &&pos) { SetPos(pos); }
-    /// @copydoc SetPos
     void SetPos(const I3Position &pos) {
         position_[0] = pos.GetX();
         position_[1] = pos.GetY();
@@ -237,6 +236,13 @@ public:
     void Clear()
     {
         return boost::apply_visitor(visitors::Clear(*this), state_);
+    }
+    /// @brief Clip the trajectory to the given bounding volume
+    /// 
+    /// @returns the portions of the trajectory that are inside the volume, if any
+    boost::optional<I3MCTrajectory> Clip(const I3Surfaces::Surface &surface) const
+    {
+        return boost::apply_visitor(visitors::Clip(*this, surface), state_);
     }
 
 private:
@@ -404,6 +410,85 @@ private:
                 self_.state_ = FinalState({v.zenith, v.azimuth});
             }
             result_type operator()(const FinalState &v) const { }
+        };
+        struct Clip : public boost::static_visitor<boost::optional<I3MCTrajectory>> {
+            const I3MCTrajectory &self_;
+            const I3Surfaces::Surface &surface_;
+            Clip(const I3MCTrajectory &self, const I3Surfaces::Surface &surface) : self_(self), surface_(surface) {};
+            result_type operator()(const std::vector<Checkpoint> &v) const {
+                result_type result;
+                size_type first(0), last(v.size());
+                double first_trim(0), last_trim(0);
+                // find the first segment that is not outside the surface
+                // outside means: first > length || (first < 0 && second < 0)
+                for ( ; first < last; first++) {
+                    auto i = surface_.GetIntersection(self_.GetPos(first), self_.GetDir(first));
+                    if (!((i.first > self_.GetLength(first)) || (i.first < 0 && i.second < 0))) {
+                        first_trim = std::max(0., i.first);
+                        break;
+                    }
+                }
+                // find the last segment that is not outside the surface
+                for (; last >= first; last--) {
+                    auto i = surface_.GetIntersection(self_.GetPos(last), self_.GetDir(last));
+                    if (!((i.first > self_.GetLength(last)) || (i.first < 0 && i.second < 0))) {
+                        if (i.second < self_.GetLength(last))
+                            last_trim = i.second;
+                        break;
+                    }
+                }
+                if (first != v.size()) {
+                    result = I3MCTrajectory();
+                    auto &clipped = *result;
+                    // copy constant properties
+                    clipped.majorID_ = self_.majorID_;
+                    clipped.minorID_ = self_.minorID_;
+                    clipped.SetType(self_.GetType());
+                    clipped.energy_ = self_.GetKineticEnergy(first);
+                    // Shift vertex to the volume border
+                    clipped.SetPos(self_.GetPos(first) + first_trim*self_.GetDir(first));
+                    clipped.SetTime(self_.GetTime(first) + first_trim/(I3Constants::c*self_.GetBeta(first)));
+                    
+                    {
+                        // Re-add intermediate checkpoints
+                        // NB: segment i goes from point i to i+1
+                        size_type i=first+1;
+                        for ( ; i < last; i++) {
+                            clipped.AddPoint(
+                                self_.GetTime(i),
+                                self_.GetKineticEnergy(i),
+                                self_.GetPos(i)
+                            );
+                        }
+                        if (last_trim > 0) {
+                            // The last segment crosses the surface; clip it.
+                            clipped.AddPoint(
+                                self_.GetTime(i) + last_trim/(I3Constants::c*self_.GetBeta(i)),
+                                self_.GetKineticEnergy(i),
+                                self_.GetPos(i) + last_trim*self_.GetDir(i)
+                            );
+                        } else {
+                            // The last segment ends inside the surface.
+                            clipped.AddPoint(
+                                self_.GetTime(i+1),
+                                self_.GetKineticEnergy(i+1),
+                                self_.GetPos(i+1)
+                            );
+                        }
+                    }
+                }
+
+                return result;
+            }
+            template <typename T>
+            result_type operator()(const T &v) const {
+                result_type result;
+                auto intersections = surface_.GetIntersection(self_.GetVertexPosition(), self_.GetDir());
+                if (intersections.first <= 0 && intersections.second >= 0) {
+                    result.reset(self_);
+                }
+                return result;
+            }
         };
         struct AddPoint : public boost::static_visitor<> {
             I3MCTrajectory &self_;

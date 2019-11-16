@@ -12,6 +12,8 @@ public:
 
     explicit operator I3MCTree() const { return to_I3MCTree(); };
     I3MCTree to_I3MCTree() const;
+
+    I3MCTrajectoryTree Clip(const I3Surfaces::Surface &surface) const;
 private:
     friend class icecube::serialization::access;
     using TreeBase::Tree<I3MCTrajectory,I3ParticleID>::load;

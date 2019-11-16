@@ -23,6 +23,7 @@ void register_I3MCTrajectoryTree()
         .def_pickle(boost_serializable_pickle_suite<I3MCTrajectoryTree>())
         .def("__str__", &stream_to_string<I3MCTrajectoryTree>)
         .def("to_I3MCTree", &I3MCTrajectoryTree::to_I3MCTree)
+        .def("clip", &I3MCTrajectoryTree::Clip)
     ;
     register_pointer_conversions<I3MCTrajectoryTree>();
 }

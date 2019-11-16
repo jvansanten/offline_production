@@ -28,6 +28,34 @@ std::ostream& Tree<I3MCTrajectory,I3ParticleID>::Print(std::ostream& s) const{
 }
 } //namespace TreeBase
 
+I3MCTrajectoryTree I3MCTrajectoryTree::Clip(const I3Surfaces::Surface &surface) const
+{
+    I3MCTrajectoryTree tree;
+    for (auto t = this->cbegin(); t != this->cend(); t++) {
+        auto clipped = t->Clip(surface);
+        // skip the track if it was clipped
+        if (!clipped)
+            continue;
+        // find the most recent ancestor in the output tree
+        auto old_parent = this->parent(t);
+        I3MCTrajectoryTree::pre_order_iterator new_parent = tree.end();
+        while (old_parent != this->cend()) {
+            new_parent = tree.find(*old_parent);
+            if (new_parent != tree.end()) {
+                break;
+            } else {
+                old_parent = this->parent(old_parent);
+            }
+        }
+        if (new_parent == tree.end()) {
+            tree.insert_after(*clipped);
+        } else {
+            tree.append_child(new_parent, *clipped);
+        }
+    }
+    return tree;
+}
+
 /// @brief Convert to legacy I3MCTree
 I3MCTree I3MCTrajectoryTree::to_I3MCTree() const {
     I3MCTree tree;
