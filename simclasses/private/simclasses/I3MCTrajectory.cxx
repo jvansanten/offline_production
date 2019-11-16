@@ -4,6 +4,15 @@
 #include <serialization/variant.hpp>
 
 I3MCTrajectory::I3MCTrajectory() {
+    // NB: I3MCTrajectory will likely be stored in an I3MCTrajectoryTree, which
+    // internally stores entries in a Node<T> that keeps pointers to the parent,
+    // child, and siblings, making sizeof(Node<T>) == sizeof(T) +
+    // 3*sizeof(void*). These in turn are stored in an unordered_map, sane
+    // implementations of which will wrap each in a __hash_node<T> that keeps a
+    // hash and a pointer to the next node, making sizeof(__hash_node<T>) ==
+    // sizeof(T) + sizeof(size_t) + sizeof(void*), for a total of 88 + 24 + 16
+    // == 128 bytes, which is conveniently a power of 2 (and still smaller than
+    // a single I3Particle!)
     static_assert(sizeof(I3MCTrajectory) == 88, "I3MCTrajectory has no internal padding");
     static_assert(sizeof(I3MCTrajectory)*2 < sizeof(I3Particle), "I3MCTrajectory is less than half the size of I3Particle");
     static_assert(sizeof(I3MCTrajectory::Checkpoint) == 5*8, "I3MCTrajectory is less than half the size of I3Particle");
@@ -78,7 +87,6 @@ void I3MCTrajectory::serialize(Archive& ar, unsigned version)
             version,i3mctrajectory_version_);
     }
 
-    // ar & make_nvp("I3FrameObject", base_object<I3FrameObject>(*this));
     ar & make_nvp("majorID", majorID_);
     ar & make_nvp("minorID", minorID_);
     ar & make_nvp("pdgEncoding", pdgEncoding_);
