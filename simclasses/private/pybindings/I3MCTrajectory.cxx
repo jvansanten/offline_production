@@ -32,6 +32,17 @@ static I3MCTrajectory Simplify(const I3MCTrajectory &t, object predicate)
     return t.Simplify(predicate);
 }
 
+template <typename Target>
+static object Clip(const I3MCTrajectory &t, const Target &target)
+{
+    object result;
+    auto optional = t.Clip(target);
+    if (optional) {
+        result = object(*optional);
+    }
+    return result;
+}
+
 void register_I3MCTrajectory()
 {
     {
@@ -56,8 +67,10 @@ void register_I3MCTrajectory()
         .def("GetPos", &I3MCTrajectory::GetPos, arg("index")=0)
         .def("GetDir", &I3MCTrajectory::GetDir, arg("index")=0)
         .def("Simplify", &Simplify, arg("predicate"))
+        .def("Clip", &Clip<I3Surfaces::Surface>, arg("surface"))
+        .def("Clip", &Clip<I3TimeWindow>, arg("interval"))
         ;
-        
+
         class_<I3MCTrajectory::TrajectoryPoint>("TrajectoryPoint", no_init)
             .add_property("kinetic_energy", &I3MCTrajectory::TrajectoryPoint::GetKineticEnergy)
             .add_property("time", &I3MCTrajectory::TrajectoryPoint::GetTime)

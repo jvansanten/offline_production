@@ -7,6 +7,7 @@
 #include "dataclasses/physics/I3ParticleID.h"
 #include "dataclasses/physics/detail/I3MCTree_fwd.h"
 #include "phys-services/surfaces/Surface.h"
+#include "dataclasses/I3TimeWindow.h"
 
 #include <boost/variant.hpp>
 
@@ -255,11 +256,30 @@ public:
         return boost::apply_visitor(visitors::Clear(*this), state_);
     }
     /// @brief Clip the trajectory to the given bounding volume
-    /// 
+    ///
     /// @returns the portions of the trajectory that are inside the volume, if any
     boost::optional<I3MCTrajectory> Clip(const I3Surfaces::Surface &surface) const
     {
-        return boost::apply_visitor(visitors::Clip(*this, surface), state_);
+        boost::optional<I3MCTrajectory> result;
+        boost::optional<I3TimeWindow> interval = FindCrossingTimes(surface);
+        if (interval) {
+            result = Clip(*interval);
+        }
+        return result;
+    }
+    /// @brief Clip the trajectory to the given time window
+    ///
+    /// @returns the portions of the trajectory that are within the given time window, if any
+    boost::optional<I3MCTrajectory> Clip(const I3TimeWindow &interval) const
+    {
+        return boost::apply_visitor(visitors::Clip(*this, interval), state_);
+    }
+    /// @brief Find the times where a trajectory crosses a closed surface
+    ///
+    /// @returns the time window during which the trajectory is inside the volume
+    boost::optional<I3TimeWindow> FindCrossingTimes(const I3Surfaces::Surface &surface) const
+    {
+        return boost::apply_visitor(visitors::FindCrossingTimes(*this, surface), state_);
     }
     /// @brief Remove intermediate trajectory points
     /// @tparam BinaryPredicate a binary predicate with a `bool operator(const &TrajectoryPoint, const &TrajectoryPoint)`. If the predicate returns `true`, the right-hand point is kept, otherwise it is removed.
@@ -438,8 +458,70 @@ private:
         };
         struct Clip : public boost::static_visitor<boost::optional<I3MCTrajectory>> {
             const I3MCTrajectory &self_;
+            const I3TimeWindow &interval_;
+            Clip(const I3MCTrajectory &self, const I3TimeWindow &interval) : self_(self), interval_(interval) {};
+            result_type operator()(const std::vector<Checkpoint> &v) const {
+                result_type result;
+                if (interval_.Contains(self_.GetTime(0)) || interval_.Contains(self_.GetTime(v.size()+1))) {
+                    auto first = self_.GetIndexForTime(interval_.GetStart());
+                    auto last = self_.GetIndexForTime(interval_.GetStop());
+                    double first_trim = std::max(0., interval_.GetStart()-self_.GetTime(first));
+                    double last_trim = std::max(0., self_.GetTime(last)-interval_.GetStop());
+
+                    auto &clipped = *result;
+                    // copy constant properties
+                    clipped.majorID_ = self_.majorID_;
+                    clipped.minorID_ = self_.minorID_;
+                    clipped.SetType(self_.GetType());
+                    clipped.energy_ = std::max(0., self_.GetKineticEnergy(first)-self_.GetMass());
+                    // Shift vertex to the volume border
+                    clipped.SetPos(self_.GetPos(first) + (first_trim*I3Constants::c*self_.GetBeta(first))*self_.GetDir(first));
+                    clipped.SetTime(self_.GetTime(first) + first_trim);
+                    
+                    {
+                        // Re-add intermediate checkpoints
+                        // NB: segment i goes from point i to i+1
+                        size_type i=first+1;
+                        for ( ; i < last; i++) {
+                            clipped.AddPoint(
+                                self_.GetTime(i),
+                                self_.GetKineticEnergy(i),
+                                self_.GetPos(i)
+                            );
+                        }
+                        if (last_trim > 0) {
+                            // The last segment extends past the end; clip it.
+                            clipped.AddPoint(
+                                self_.GetTime(i) + last_trim,
+                                self_.GetKineticEnergy(i),
+                                self_.GetPos(i) + (last_trim*I3Constants::c*self_.GetBeta(last))*self_.GetDir(i)
+                            );
+                        } else {
+                            // The last segment ends inside.
+                            clipped.AddPoint(
+                                self_.GetTime(i+1),
+                                self_.GetKineticEnergy(i+1),
+                                self_.GetPos(i+1)
+                            );
+                        }
+                    }
+                }
+
+                return result;
+            }
+            template <typename T>
+            result_type operator()(const T &v) const {
+                result_type result;
+                if (interval_.Contains(self_.GetTime())) {
+                    result = self_;
+                }
+                return result;
+            }
+        };
+        struct FindCrossingTimes : public boost::static_visitor<boost::optional<I3TimeWindow>> {
+            const I3MCTrajectory &self_;
             const I3Surfaces::Surface &surface_;
-            Clip(const I3MCTrajectory &self, const I3Surfaces::Surface &surface) : self_(self), surface_(surface) {};
+            FindCrossingTimes(const I3MCTrajectory &self, const I3Surfaces::Surface &surface) : self_(self), surface_(surface) {};
             result_type operator()(const std::vector<Checkpoint> &v) const {
                 result_type result;
                 size_type first(0), last(v.size());
@@ -463,54 +545,29 @@ private:
                     }
                 }
                 if (first != v.size()) {
-                    result = I3MCTrajectory();
-                    auto &clipped = *result;
-                    // copy constant properties
-                    clipped.majorID_ = self_.majorID_;
-                    clipped.minorID_ = self_.minorID_;
-                    clipped.SetType(self_.GetType());
-                    clipped.energy_ = std::max(0., self_.GetKineticEnergy(first)-self_.GetMass());
-                    // Shift vertex to the volume border
-                    clipped.SetPos(self_.GetPos(first) + first_trim*self_.GetDir(first));
-                    clipped.SetTime(self_.GetTime(first) + first_trim/(I3Constants::c*self_.GetBeta(first)));
-                    
-                    {
-                        // Re-add intermediate checkpoints
-                        // NB: segment i goes from point i to i+1
-                        size_type i=first+1;
-                        for ( ; i < last; i++) {
-                            clipped.AddPoint(
-                                self_.GetTime(i),
-                                self_.GetKineticEnergy(i),
-                                self_.GetPos(i)
-                            );
-                        }
-                        if (last_trim > 0) {
-                            // The last segment crosses the surface; clip it.
-                            clipped.AddPoint(
-                                self_.GetTime(i) + last_trim/(I3Constants::c*self_.GetBeta(i)),
-                                self_.GetKineticEnergy(i),
-                                self_.GetPos(i) + last_trim*self_.GetDir(i)
-                            );
-                        } else {
-                            // The last segment ends inside the surface.
-                            clipped.AddPoint(
-                                self_.GetTime(i+1),
-                                self_.GetKineticEnergy(i+1),
-                                self_.GetPos(i+1)
-                            );
-                        }
-                    }
+                    result = I3TimeWindow(
+                        self_.GetTime(first) + first_trim/(I3Constants::c*self_.GetBeta(first)),
+                        last_trim > 0 ?
+                            self_.GetTime(last) + last_trim/(I3Constants::c*self_.GetBeta(last))
+                            : self_.GetTime(last+1)
+                    );
                 }
 
                 return result;
             }
-            template <typename T>
-            result_type operator()(const T &v) const {
+            result_type operator()(const InitialState &v) const {
                 result_type result;
                 auto intersections = surface_.GetIntersection(self_.GetVertexPosition(), self_.GetDir());
                 if (intersections.first <= 0 && intersections.second >= 0) {
-                    result.reset(self_);
+                    result = I3TimeWindow(self_.time_, std::numeric_limits<double>::infinity());
+                }
+                return result;
+            }
+            result_type operator()(const FinalState &v) const {
+                result_type result;
+                auto intersections = surface_.GetIntersection(self_.GetVertexPosition(), self_.GetDir());
+                if (intersections.first <= 0 && intersections.second >= 0) {
+                    result = I3TimeWindow(self_.time_, self_.time_);
                 }
                 return result;
             }
