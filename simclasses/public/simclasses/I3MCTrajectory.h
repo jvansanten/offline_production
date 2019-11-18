@@ -1,5 +1,8 @@
 #ifndef SIMCLASSES_I3MCTRAJECTORY_H_INCLUDED
 #define SIMCLASSES_I3MCTRAJECTORY_H_INCLUDED
+
+#include <functional>
+
 #include "dataclasses/physics/I3Particle.h"
 #include "dataclasses/physics/I3ParticleID.h"
 #include "dataclasses/physics/detail/I3MCTree_fwd.h"
@@ -65,6 +68,20 @@ public:
     /// \cond
     typedef size_t size_type;
     /// \endcond
+
+    class TrajectoryPoint {
+    public:
+        const I3Position& GetPos() const { return pos_; }
+        double GetTime() const { return time_; }
+        double GetKineticEnergy() const { return energy_; }
+    private:
+        friend class I3MCTrajectory;
+        TrajectoryPoint() {}
+        TrajectoryPoint(double time, double energy, const I3Position &pos)
+            : time_(time), energy_(energy), pos_(pos) {}
+        double time_, energy_;
+        I3Position pos_;
+    };
 
     /// \cond
     operator I3ParticleID() const { return I3ParticleID(majorID_,minorID_); }
@@ -243,6 +260,14 @@ public:
     boost::optional<I3MCTrajectory> Clip(const I3Surfaces::Surface &surface) const
     {
         return boost::apply_visitor(visitors::Clip(*this, surface), state_);
+    }
+    /// @brief Remove intermediate trajectory points
+    /// @tparam BinaryPredicate a binary predicate with a `bool operator(const &TrajectoryPoint, const &TrajectoryPoint)`. If the predicate returns `true`, the right-hand point is kept, otherwise it is removed.
+    /// @returns a simplified I3MCTrajectory containing the vertex and endpoint, plus any intermediate points that pass the predicate
+    template <class BinaryPredicate>
+    I3MCTrajectory Simplify(BinaryPredicate&& pred) const
+    {
+        return boost::apply_visitor(visitors::make_Simplify(*this, pred), state_);
     }
 
 private:
@@ -444,7 +469,7 @@ private:
                     clipped.majorID_ = self_.majorID_;
                     clipped.minorID_ = self_.minorID_;
                     clipped.SetType(self_.GetType());
-                    clipped.energy_ = self_.GetKineticEnergy(first);
+                    clipped.energy_ = std::max(0., self_.GetKineticEnergy(first)-self_.GetMass());
                     // Shift vertex to the volume border
                     clipped.SetPos(self_.GetPos(first) + first_trim*self_.GetDir(first));
                     clipped.SetTime(self_.GetTime(first) + first_trim/(I3Constants::c*self_.GetBeta(first)));
@@ -490,6 +515,49 @@ private:
                 return result;
             }
         };
+        template <class BinaryPredicate>
+        struct Simplify : public boost::static_visitor<I3MCTrajectory> {
+            const I3MCTrajectory &self_;
+            BinaryPredicate pred_;
+            Simplify(const I3MCTrajectory &self, BinaryPredicate&& pred) : self_(self), pred_(pred) {};
+            result_type operator()(const std::vector<Checkpoint> &v) const {
+                result_type simplified;
+                simplified.majorID_ = self_.majorID_;
+                simplified.minorID_ = self_.minorID_;
+                simplified.pdgEncoding_ = self_.pdgEncoding_;
+                simplified.position_ = self_.position_;
+                simplified.time_ = self_.time_;
+                simplified.energy_ = self_.energy_;
+                // Add intermediate points if they pass the predicate
+                TrajectoryPoint left(self_.GetTime(0), self_.GetKineticEnergy(0), self_.GetPos(0));
+                for (size_type i=1; i < v.size(); i++) {
+                    TrajectoryPoint right(self_.GetTime(i), self_.GetKineticEnergy(i), self_.GetPos(i));
+                    if (pred_(std::cref(left), std::cref(right))) {
+                        simplified.AddPoint(
+                            right.GetTime(),
+                            right.GetKineticEnergy(),
+                            right.GetPos()
+                        );
+                        left = right;
+                    }
+                }
+                // Unconditionally add last point
+                simplified.AddPoint(
+                    self_.GetTime(v.size()+1),
+                    self_.GetKineticEnergy(v.size()+1),
+                    self_.GetPos(v.size()+1)
+                );
+                return simplified;
+            }
+            template <typename T>
+            result_type operator()(const T &v) const {
+                return result_type(self_);
+            }
+        };
+        template <class BinaryPredicate>
+        static Simplify<BinaryPredicate> make_Simplify(const I3MCTrajectory &self, BinaryPredicate&& pred) {
+            return Simplify<BinaryPredicate>(self, pred);
+        }
         struct AddPoint : public boost::static_visitor<> {
             I3MCTrajectory &self_;
             double reltime_;

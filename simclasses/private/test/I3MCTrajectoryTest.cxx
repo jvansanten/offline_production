@@ -80,3 +80,21 @@ TEST(state_machine) {
 
 
 }
+
+TEST(simplify) {
+    I3Position pos(1,2,3);
+    I3Direction dir(1,0,0);
+    double time = 0;
+    double energy = 2*I3Units::GeV;
+    I3MCTrajectory track(I3Particle::MuMinus, pos, dir, energy, time);
+    I3Position zig(0,1,0);
+    I3Position zag(0,0,1);
+    track.AddPoint(1, energy/2, pos + zig);
+    track.AddPoint(2, energy/3, pos + zag);
+
+    auto simplified = track.Simplify([](I3MCTrajectory::TrajectoryPoint a, I3MCTrajectory::TrajectoryPoint b) {
+        return (a.GetPos()-b.GetPos()).Magnitude() > 30;
+    });
+    ENSURE_EQUAL(track.GetNumSteps(), 2);
+    ENSURE_EQUAL(simplified.GetNumSteps(), 1);
+}

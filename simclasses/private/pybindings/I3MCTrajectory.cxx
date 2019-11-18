@@ -27,28 +27,44 @@ I3MCTrajectory_prettyprint(const I3MCTrajectory& p)
     return oss.str();
 }
 
+static I3MCTrajectory Simplify(const I3MCTrajectory &t, object predicate)
+{
+    return t.Simplify(predicate);
+}
+
 void register_I3MCTrajectory()
 {
-    class_<I3MCTrajectory, I3MCTrajectoryPtr>(
-        "I3MCTrajectory",
-        init<
-            I3Particle::ParticleType,
-            const I3Position&,
-            const I3Direction&,
-            double,
-            double
-        >((arg("type"),"pos","dir","energy","time"))
-    )
-    .add_property("type", &I3MCTrajectory::GetType, &I3MCTrajectory::SetType)
-    .add_property("shape", &I3MCTrajectory::GetShape)
-    .def("__len__", &I3MCTrajectory::GetNumSteps)
-    .def("__str__", &I3MCTrajectory_prettyprint)
-    .def("__eq__", &I3MCTrajectory::operator==)
-    .def("GetKineticEnergy", &I3MCTrajectory::GetKineticEnergy, arg("index")=0)
-    .def("GetTime", &I3MCTrajectory::GetTime, arg("index")=0)
-    .def("GetPos", &I3MCTrajectory::GetPos, arg("index")=0)
-    .def("GetDir", &I3MCTrajectory::GetDir, arg("index")=0)
-    ;
+    {
+        scope outer = 
+        class_<I3MCTrajectory, I3MCTrajectoryPtr>(
+            "I3MCTrajectory",
+            init<
+                I3Particle::ParticleType,
+                const I3Position&,
+                const I3Direction&,
+                double,
+                double
+            >((arg("type"),"pos","dir","energy","time"))
+        )
+        .add_property("type", &I3MCTrajectory::GetType, &I3MCTrajectory::SetType)
+        .add_property("shape", &I3MCTrajectory::GetShape)
+        .def("__len__", &I3MCTrajectory::GetNumSteps)
+        .def("__str__", &I3MCTrajectory_prettyprint)
+        .def("__eq__", &I3MCTrajectory::operator==)
+        .def("GetKineticEnergy", &I3MCTrajectory::GetKineticEnergy, arg("index")=0)
+        .def("GetTime", &I3MCTrajectory::GetTime, arg("index")=0)
+        .def("GetPos", &I3MCTrajectory::GetPos, arg("index")=0)
+        .def("GetDir", &I3MCTrajectory::GetDir, arg("index")=0)
+        .def("Simplify", &Simplify, arg("predicate"))
+        ;
+        
+        class_<I3MCTrajectory::TrajectoryPoint>("TrajectoryPoint", no_init)
+            .add_property("kinetic_energy", &I3MCTrajectory::TrajectoryPoint::GetKineticEnergy)
+            .add_property("time", &I3MCTrajectory::TrajectoryPoint::GetTime)
+            .add_property("pos", make_function(&I3MCTrajectory::TrajectoryPoint::GetPos, return_value_policy<copy_const_reference>()))
+        ;
+    }
+
 
     implicitly_convertible<I3MCTrajectory,I3ParticleID>();
 
