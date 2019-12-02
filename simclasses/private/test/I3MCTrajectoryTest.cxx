@@ -3,7 +3,7 @@
 
 #include "simclasses/I3MCTrajectory.h"
 
-
+#include "dataclasses/physics/I3MCTree.h"
 TEST_GROUP(I3MCTrajectory);
 
 TEST(state_machine) {
@@ -17,6 +17,8 @@ TEST(state_machine) {
         ENSURE(std::isnan(track.GetLength()));
         ENSURE_EQUAL(track.GetNumSteps(), 0);
         ENSURE_EQUAL(track.GetDir(), dir);
+        ENSURE_EQUAL(track.GetKineticEnergy(), energy);
+        ENSURE_EQUAL(track.GetTotalEnergy(), energy + I3Particle::GetMassForType(I3Particle::MuMinus));
     }
 
     {

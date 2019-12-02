@@ -22,7 +22,7 @@ static const unsigned i3mctrajectory_version_ = 1;
 /// and type do not. In the absence of a strong magnetic field, long-ranged
 /// particles tend to travel on approximately straight lines between stochastic
 /// energy losses. This leads to a natural representation of a trajectory as a
-/// series of checkpoints (time,energy,x,y,z).
+/// series of checkpoints (time,kinetic energy,x,y,z).
 ///
 /// An I3MCTrajectory can represent one of three states:
 /// - An initial state: The state at construction, or after a call to Clear().
@@ -52,13 +52,19 @@ public:
     /// @brief Initialize a trajectory
     /// The trajectory has a type, position, time, direction, and kinetic
     /// energy, but no length. GetShape() will return `I3Particle::Null`
+    ///
+    /// @param[in] type          PDG code of the particle type
+    /// @param[in] pos           vertex position
+    /// @param[in] dir           initial direction
+    /// @param[in] kineticEnergy initial kinetic energy
+    /// @param[in] time          vertex time
     I3MCTrajectory(I3Particle::ParticleType type,
         const I3Position &pos, const I3Direction &dir,
-        double energy, double time)
+        double kineticEnergy, double time)
         : pdgEncoding_(type),
           position_({pos.GetX(),pos.GetY(),pos.GetZ()}),
           time_(time),
-          energy_(std::max(0., energy - GetMass())),
+          kineticEnergy_(kineticEnergy),
           state_(InitialState({dir.GetZenith(),dir.GetAzimuth()}))
     {
         auto id = I3ParticleID::create();
@@ -74,13 +80,13 @@ public:
     public:
         const I3Position& GetPos() const { return pos_; }
         double GetTime() const { return time_; }
-        double GetKineticEnergy() const { return energy_; }
+        double GetKineticEnergy() const { return kineticEnergy_; }
     private:
         friend class I3MCTrajectory;
         TrajectoryPoint() {}
-        TrajectoryPoint(double time, double energy, const I3Position &pos)
-            : time_(time), energy_(energy), pos_(pos) {}
-        double time_, energy_;
+        TrajectoryPoint(double time, double kineticEnergy, const I3Position &pos)
+            : time_(time), kineticEnergy_(kineticEnergy), pos_(pos) {}
+        double time_, kineticEnergy_;
         I3Position pos_;
     };
 
@@ -96,7 +102,7 @@ public:
           CompareFloatingPoint::Compare_NanEqual(position_[1], rhs.position_[1]) &&
           CompareFloatingPoint::Compare_NanEqual(position_[2], rhs.position_[2]) &&
           CompareFloatingPoint::Compare_NanEqual(time_, rhs.time_) &&
-          CompareFloatingPoint::Compare_NanEqual(energy_, rhs.energy_) &&
+          CompareFloatingPoint::Compare_NanEqual(kineticEnergy_, rhs.kineticEnergy_) &&
           state_ == rhs.state_
       );
     }
@@ -170,6 +176,13 @@ public:
         return boost::apply_visitor(visitors::GetEnergy(*this, index), state_);
     }
 
+    /// @param[in] index index of a segment
+    /// @returns total energy at the beginning of a segment in I3Units
+    double GetTotalEnergy(size_type index=0) const
+    {
+        return boost::apply_visitor(visitors::GetEnergy(*this, index), state_) + GetMass();
+    }
+
     /// @returns The particle's mass in I3Units
     /// NB: pseudoparticles in the PDG code range above 2e6 are considered massless
     double GetMass() const
@@ -233,11 +246,11 @@ public:
     /// If Shape == MCTrack, this appends a point to the end of the trajectory.
     /// Otherwise, it sets the shape to MCTrack and inserts the point as the
     /// first.
-    void AddPoint(double time, double energy, const I3Position &pos)
+    void AddPoint(double time, double kineticEnergy, const I3Position &pos)
     {
         double reltime = time - time_;
         I3Position displacement = pos - GetVertexPosition();
-        return boost::apply_visitor(visitors::AddPoint(*this,reltime,energy,displacement), state_);
+        return boost::apply_visitor(visitors::AddPoint(*this,reltime,kineticEnergy,displacement), state_);
     }
     /// @brief Mark as a point-like trajectory.
     ///
@@ -297,14 +310,14 @@ private:
 
     struct Checkpoint {
         double time;
-        double energy;
+        double kineticEnergy;
         double x,y,z;
         I3Position GetPos() const { return I3Position(x,y,z); }
         template <class Archive> void serialize(Archive& ar, unsigned version);
         bool operator==(const Checkpoint& rhs) const {
           return (
               CompareFloatingPoint::Compare_NanEqual(time, rhs.time) &&
-              CompareFloatingPoint::Compare_NanEqual(energy, rhs.energy) &&
+              CompareFloatingPoint::Compare_NanEqual(kineticEnergy, rhs.kineticEnergy) &&
               CompareFloatingPoint::Compare_NanEqual(x, rhs.x) &&
               CompareFloatingPoint::Compare_NanEqual(y, rhs.y) &&
               CompareFloatingPoint::Compare_NanEqual(z, rhs.z)
@@ -348,7 +361,7 @@ private:
     /// Vertex time
     double time_;
     /// Initial kinetic energy
-    double energy_;
+    double kineticEnergy_;
 
     boost::variant<InitialState,FinalState,std::vector<Checkpoint> > state_;
     static_assert(sizeof(state_) == 32, "state variant is small enough");
@@ -473,7 +486,7 @@ private:
                     clipped.majorID_ = self_.majorID_;
                     clipped.minorID_ = self_.minorID_;
                     clipped.SetType(self_.GetType());
-                    clipped.energy_ = std::max(0., self_.GetKineticEnergy(first)-self_.GetMass());
+                    clipped.kineticEnergy_ = std::max(0., self_.GetKineticEnergy(first)-self_.GetMass());
                     // Shift vertex to the volume border
                     clipped.SetPos(self_.GetPos(first) + (first_trim*I3Constants::c*self_.GetBeta(first))*self_.GetDir(first));
                     clipped.SetTime(self_.GetTime(first) + first_trim);
@@ -584,7 +597,7 @@ private:
                 simplified.pdgEncoding_ = self_.pdgEncoding_;
                 simplified.position_ = self_.position_;
                 simplified.time_ = self_.time_;
-                simplified.energy_ = self_.energy_;
+                simplified.kineticEnergy_ = self_.kineticEnergy_;
                 // Add intermediate points if they pass the predicate
                 TrajectoryPoint left(self_.GetTime(0), self_.GetKineticEnergy(0), self_.GetPos(0));
                 for (size_type i=1; i < v.size(); i++) {
@@ -618,24 +631,24 @@ private:
         struct AddPoint : public boost::static_visitor<> {
             I3MCTrajectory &self_;
             double reltime_;
-            double energy_;
+            double kineticEnergy_;
             const I3Position &displacement_;
             AddPoint(I3MCTrajectory &self, double reltime, double energy, const I3Position &displacement)
-                : self_(self), reltime_(reltime), energy_(energy), displacement_(displacement) {};
+                : self_(self), reltime_(reltime), kineticEnergy_(energy), displacement_(displacement) {};
             result_type operator()(std::vector<Checkpoint> &v) const {
                 if (!(reltime_ > v.back().time)) {
                     throw std::domain_error("Checkpoint times must be strictly increasing");
                 }
-                if (!(energy_ <= v.back().energy)) {
+                if (!(kineticEnergy_ <= v.back().kineticEnergy)) {
                     std::ostringstream oss;
-                    oss << "Checkpoint "<<v.size()+1<<" has energy "<<energy_
-                        <<" > checkoint "<<v.size()<<" ("<<v.back().energy<<")";
+                    oss << "Checkpoint "<<v.size()+1<<" has energy "<<kineticEnergy_
+                        <<" > checkoint "<<v.size()<<" ("<<v.back().kineticEnergy<<")";
                     throw std::domain_error(oss.str());
                 }
                 v.push_back(
                     {
                         reltime_,
-                        energy_,
+                        kineticEnergy_,
                         displacement_.GetX(),
                         displacement_.GetY(),
                         displacement_.GetZ()
@@ -647,14 +660,14 @@ private:
                 if (!(reltime_ > 0)) {
                     throw std::domain_error("Checkpoint times must be strictly increasing");
                 }
-                if (!(energy_ <= self_.energy_)) {
+                if (!(kineticEnergy_ <= self_.kineticEnergy_)) {
                     throw std::domain_error("Checkpoint energy must be <= initial energy");
                 }
                 self_.state_ = std::vector<Checkpoint>(
                     1,
                     {
                         reltime_,
-                        energy_,
+                        kineticEnergy_,
                         displacement_.GetX(),
                         displacement_.GetY(),
                         displacement_.GetZ()
@@ -678,13 +691,13 @@ private:
             GetEnergy(const I3MCTrajectory &self, size_type i=0) : self_(self), index_(i) {};
             result_type operator()(const std::vector<Checkpoint> &v) const {
                 if (index_ == 0) {
-                    return self_.energy_;
+                    return self_.kineticEnergy_;
                 } else {
-                    return v[std::min(index_,v.size())-1].energy;
+                    return v[std::min(index_,v.size())-1].kineticEnergy;
                 }
             }
-            result_type operator()(const InitialState &v) const { return self_.energy_; }
-            result_type operator()(const FinalState &v) const { return self_.energy_; }
+            result_type operator()(const InitialState &v) const { return self_.kineticEnergy_; }
+            result_type operator()(const FinalState &v) const { return self_.kineticEnergy_; }
         };
 
     };

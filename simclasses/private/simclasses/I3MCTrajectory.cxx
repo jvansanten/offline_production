@@ -58,7 +58,7 @@ template <class Archive>
 void I3MCTrajectory::Checkpoint::serialize(Archive& ar, unsigned version)
 {
     ar & make_nvp("time", time);
-    ar & make_nvp("energy", energy);
+    ar & make_nvp("kineticEnergy", kineticEnergy);
     ar & make_nvp("x", x);
     ar & make_nvp("y", y);
     ar & make_nvp("z", z);
@@ -92,7 +92,7 @@ void I3MCTrajectory::serialize(Archive& ar, unsigned version)
     ar & make_nvp("pdgEncoding", pdgEncoding_);
     ar & make_nvp("vertex", position_);
     ar & make_nvp("time", time_);
-    ar & make_nvp("energy", energy_);
+    ar & make_nvp("kineticEnergy", kineticEnergy_);
     ar & make_nvp("state", state_);
 } 
 
