@@ -15,7 +15,7 @@ TEST(state_machine) {
     {
         ENSURE_EQUAL(track.GetShape(), I3Particle::Null);
         ENSURE(std::isnan(track.GetLength()));
-        ENSURE_EQUAL(track.GetNumSteps(), 0);
+        ENSURE_EQUAL(track.GetNumSteps(), 0u);
         ENSURE_EQUAL(track.GetDir(), dir);
         ENSURE_EQUAL(track.GetKineticEnergy(), energy);
         ENSURE_EQUAL(track.GetTotalEnergy(), energy + I3Particle::GetMassForType(I3Particle::MuMinus));
@@ -33,7 +33,7 @@ TEST(state_machine) {
         track.AddPoint(1, new_energy, pos + zig);
         ENSURE_EQUAL(track.GetShape(), I3Particle::MCTrack);
         ENSURE_EQUAL(track.GetDisplacement(), 1);
-        ENSURE_EQUAL(track.GetNumSteps(), 1);
+        ENSURE_EQUAL(track.GetNumSteps(), 1u);
         ENSURE_EQUAL(track.GetLength(0), 1);
         ENSURE(std::isnan(track.GetLength(1)));
         ENSURE_EQUAL(track.GetDir(0), I3Direction(zig));
@@ -46,7 +46,7 @@ TEST(state_machine) {
         track.AddPoint(2, new_energy, pos + zig + zag);
         ENSURE_EQUAL(track.GetShape(), I3Particle::MCTrack);
         ENSURE_EQUAL(track.GetDisplacement(), std::sqrt(2));
-        ENSURE_EQUAL(track.GetNumSteps(), 2);
+        ENSURE_EQUAL(track.GetNumSteps(), 2u);
         ENSURE_EQUAL(track.GetLength(0), 1);
         ENSURE_EQUAL(track.GetLength(1), 1);
         ENSURE(std::isnan(track.GetLength(2)));
@@ -77,7 +77,7 @@ TEST(state_machine) {
         ENSURE_EQUAL(track.GetShape(), I3Particle::MCTrack);
         ENSURE_EQUAL(clone.GetShape(), I3Particle::Cascade);
         ENSURE_EQUAL(clone.GetDisplacement(), 0);
-        ENSURE_EQUAL(clone.GetNumSteps(), 0);
+        ENSURE_EQUAL(clone.GetNumSteps(), 0u);
     }
 
 
@@ -97,6 +97,6 @@ TEST(simplify) {
     auto simplified = track.Simplify([](I3MCTrajectory::TrajectoryPoint a, I3MCTrajectory::TrajectoryPoint b) {
         return (a.GetPos()-b.GetPos()).Magnitude() > 30;
     });
-    ENSURE_EQUAL(track.GetNumSteps(), 2);
-    ENSURE_EQUAL(simplified.GetNumSteps(), 1);
+    ENSURE_EQUAL(track.GetNumSteps(), 2u);
+    ENSURE_EQUAL(simplified.GetNumSteps(), 1u);
 }

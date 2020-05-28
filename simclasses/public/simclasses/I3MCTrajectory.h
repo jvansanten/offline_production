@@ -39,7 +39,7 @@ static const unsigned i3mctrajectory_version_ = 1;
 ///
 /// I3MCTrajectory is designed to be as small as possible: 88 bytes on the
 /// stack, plus 40 on the heap for each segment. By contrast, I3Particles are
-/// 200 bytes apiece (all on the stack), mostly due to bloated direction and
+/// 160 bytes apiece (all on the stack), mostly due to bloated direction and
 /// position classes, extra fields that are not generally useful for particles
 /// in simulation, and internal padding.
 ///
@@ -334,7 +334,7 @@ private:
           );
         }
     };
-    static_assert(2*sizeof(InitialState) < sizeof(I3Direction), "I3Direction is bloated");
+    static_assert(sizeof(InitialState) < sizeof(I3Direction), "InitialState should be smaller than I3Direction");
     struct FinalState {
         double zenith, azimuth;
         template <class Archive> void serialize(Archive& ar, unsigned version);
@@ -357,7 +357,7 @@ private:
     /// NB: I3Position contains representations of itself in 3 different
     /// coordinate systems. We store the Cartesian 3-vector here to save space.
     std::array<double,3> position_;
-    static_assert(2*sizeof(position_) < sizeof(I3Position), "I3Position is bloated");
+    static_assert(sizeof(position_) < sizeof(I3Position), "Bare position vector should be smaller than I3Position");
     /// Vertex time
     double time_;
     /// Initial kinetic energy

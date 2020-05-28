@@ -14,8 +14,8 @@ I3MCTrajectory::I3MCTrajectory() {
     // == 128 bytes, which is conveniently a power of 2 (and still smaller than
     // a single I3Particle!)
     static_assert(sizeof(I3MCTrajectory) == 88, "I3MCTrajectory has no internal padding");
-    static_assert(sizeof(I3MCTrajectory)*2 < sizeof(I3Particle), "I3MCTrajectory is less than half the size of I3Particle");
-    static_assert(sizeof(I3MCTrajectory::Checkpoint) == 5*8, "I3MCTrajectory is less than half the size of I3Particle");
+    static_assert(10*sizeof(I3MCTrajectory) < 6*sizeof(I3Particle), "I3MCTrajectory 40% smaller than I3Particle");
+    static_assert(sizeof(I3MCTrajectory::Checkpoint) == 5*8, "I3MCTrajectory::Checkpoint has no internal padding");
 }
 
 
