@@ -143,6 +143,82 @@ std::vector<I3Particle> I3PropagatorServicePROPOSAL::Propagate(I3Particle& p, Di
     return daughters;
 }
 
+I3MCTrajectoryTree I3PropagatorServicePROPOSAL::Propagate(const I3MCTrajectory& trajectory)
+{
+    I3MCTrajectoryTree daughters(trajectory);
+    I3MCTrajectory &p = *daughters.begin();
+
+    if (!proposal_service_.IsRegistered(particle_converter_.GeneratePROPOSALType(trajectory.GetType()))) {
+        return daughters;
+    }
+
+    Particle particle = particle_converter_.GeneratePROPOSALParticle(trajectory);
+    std::vector<DynamicData*> secondaries = proposal_service_.Propagate(particle, distance_to_propagate_);
+
+    // insert entry checkpoint if it is in the future
+    if (particle.GetEntryTime() * I3Units::second > p.GetTime(p.GetNumSteps())) {
+        p.AddPoint(
+            particle.GetEntryTime() * I3Units::second,
+            particle.GetEntryEnergy() * I3Units::MeV,
+            I3Position(
+                particle.GetEntryPoint().GetX() * I3Units::cm,
+                particle.GetEntryPoint().GetY() * I3Units::cm,
+                particle.GetEntryPoint().GetZ() * I3Units::cm
+            )
+        );
+    }
+
+    double kineticEnergy = p.GetKineticEnergy(p.GetNumSteps());
+    for (const DynamicData* pp : secondaries) {
+        if (!pp)
+            continue;
+        kineticEnergy -= std::min(kineticEnergy, pp->GetEnergy() * I3Units::MeV);
+        if (pp->GetTypeId() != PROPOSAL::DynamicData::ContinuousEnergyLoss) {
+            daughters.insert(
+                I3MCTrajectory(
+                    particle_converter_.GenerateI3Type(*pp),
+                    I3Position(
+                        pp->GetPosition().GetX() * I3Units::cm,
+                        pp->GetPosition().GetY() * I3Units::cm,
+                        pp->GetPosition().GetZ() * I3Units::cm
+                    ),
+                    I3Direction(
+                        pp->GetDirection().GetX(),
+                        pp->GetDirection().GetY(),
+                        pp->GetDirection().GetZ()
+                    ),
+                    pp->GetEnergy() * I3Units::MeV,
+                    pp->GetTime() * I3Units::second
+                )
+            );
+            p.AddPoint(
+                pp->GetTime() * I3Units::second,
+                kineticEnergy,
+                I3Position(
+                    pp->GetPosition().GetX() * I3Units::cm,
+                    pp->GetPosition().GetY() * I3Units::cm,
+                    pp->GetPosition().GetZ() * I3Units::cm
+                )
+            );
+        }
+    }
+
+    // insert exit checkpoint if it is in the future
+    if (particle.GetExitTime() * I3Units::second > p.GetTime()) {
+        p.AddPoint(
+            particle.GetEntryTime() * I3Units::second,
+            particle.GetEntryEnergy() * I3Units::MeV,
+            I3Position(
+                particle.GetEntryPoint().GetX() * I3Units::cm,
+                particle.GetEntryPoint().GetY() * I3Units::cm,
+                particle.GetEntryPoint().GetZ() * I3Units::cm
+            )
+        );
+    }
+
+    return daughters;
+}
+
 // ------------------------------------------------------------------------- //
 I3MMCTrackPtr I3PropagatorServicePROPOSAL::propagate(I3Particle& p, std::vector<I3Particle>& daughters)
 {

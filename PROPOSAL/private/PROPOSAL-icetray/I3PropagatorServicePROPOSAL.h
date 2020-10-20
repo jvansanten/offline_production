@@ -14,6 +14,7 @@
 #include "icetray/I3PointerTypedefs.h"
 #include "sim-services/I3PropagatorService.h"
 #include "simclasses/I3MMCTrack.h"
+#include "simclasses/I3MCTrajectoryTree.h"
 
 #include "PROPOSAL/PROPOSAL.h"
 #include "PROPOSAL-icetray/Converter.h"
@@ -58,6 +59,7 @@ public:
     virtual ~I3PropagatorServicePROPOSAL();
 
     virtual std::vector<I3Particle> Propagate(I3Particle& p, DiagnosticMapPtr frame, I3FramePtr);
+    virtual I3MCTrajectoryTree Propagate(const I3MCTrajectory& p);
     virtual void SetRandomNumberGenerator(I3RandomServicePtr random);
     virtual void RegisterParticleType(I3Particle::ParticleType);
 
